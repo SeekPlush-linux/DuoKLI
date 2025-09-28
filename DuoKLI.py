@@ -210,15 +210,20 @@ def streak_farm(amount, account):
                 session_data = response.json()
             else:
                 print("[red]An error has occurred while trying to create a session.[/]")
+                if DEBUG:
+                    print(
+                        f"[bold magenta][DEBUG][/] Status code {response.status_code}\n"
+                        f"[bold magenta][DEBUG][/] Content: {response.text}"
+                    )
                 return
             if 'id' not in session_data:
                 print("[red]Session ID not found in response data.[/]")
+                if DEBUG:
+                    print(
+                        f"[bold magenta][DEBUG][/] Status code {response.status_code}\n"
+                        f"[bold magenta][DEBUG][/] Content: {response.text}"
+                    )
                 return
-            if DEBUG:
-                print(
-                    "[bold magenta][DEBUG][/] Session creation result:\n"
-                   f"[bold magenta][DEBUG][/] Status code {response.status_code}"
-                )
 
             try:
                 start_timestamp = int((simulated_day - timedelta(seconds=1)).timestamp())
