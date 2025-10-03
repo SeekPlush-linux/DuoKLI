@@ -1,5 +1,8 @@
 # DuoKLI
 A Duolingo XP/gem/streak/etc. farmer CLI Python script, based on [DuoXPy](https://github.com/DuoXPy/DuoXPy-Bot)'s open sourced code. Supports Windows and Linux.
+
+_Join our [Discord server](https://discord.gg/E76ganGV4M)!_
+
 ![Image of DuoKLI](/assets/duokli-image.png)
 
 ## Prerequisites
