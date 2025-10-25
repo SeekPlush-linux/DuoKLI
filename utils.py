@@ -41,7 +41,7 @@ def getch():
     return ch
 
 def get_headers(account: int = None, token: str = None, user_id: int = None):
-    if account:
+    if account != None:
         token = config['accounts'][account]['token']
         user_id = config['accounts'][account]['id']
     return {
