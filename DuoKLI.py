@@ -11,7 +11,7 @@ from utils import getch, get_headers, get_duo_info, clear, fetch_username_and_id
 # TODO: Port some functions from [my private project] to here
 # TODO: Add questsaver function to the saver script
 
-VERSION = "v1.0.0"
+VERSION = "v1.0.1"
 TIMEZONE = str(get_localzone())
 
 with open("config.json", "r") as f:
