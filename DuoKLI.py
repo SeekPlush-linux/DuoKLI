@@ -10,8 +10,11 @@ from utils import getch, get_headers, get_duo_info, clear, fetch_username_and_id
 # TODO: Add "Time Taken" to farm functions
 # TODO: Port some functions from [my private project] to here
 # TODO: Add questsaver function to the saver script
+# TODO: Implement multi-threading and proxies
+# TODO: Implement setup screen when no accounts exist in config file
+# TODO: Add more items to the items menu
 
-VERSION = "v1.0.1"
+VERSION = "v1.0.2"
 TIMEZONE = str(get_localzone())
 
 with open("config.json", "r") as f:
@@ -20,6 +23,35 @@ with open("config.json", "r") as f:
 DEBUG = config['debug']
 def title_string():
     return f'\n   [bold][bright_green]Duo[/][bright_blue]KLI[/] [white]{VERSION}[/]{" [magenta][Debug Mode Enabled][/]" if DEBUG else ""}[/]'
+
+def start_task(type: str, account: int, request_amount: bool = True):
+    if request_amount:
+        try:
+            amount = int(input(f"Enter amount of {type} [Enter to cancel]: "))
+        except ValueError:
+            return
+
+    if type == "Super Duolingo":
+        print("[bright_yellow]Activating 3 days of Super Duolingo...[/]", end="")
+    else:
+        print("\n  [bright_yellow]Press Ctrl+C to stop farming.[/]\n")
+        print(f"[blue]Starting to farm {amount} {type}...[/]", end="")
+    _print("\r", end="")
+
+    try:
+        if type.lower() == "xp":
+            xp_farm(amount, account)
+        elif type.lower() == "gems":
+            gem_farm(amount, account)
+        elif type.lower() == "streak days":
+            streak_farm(amount, account)
+        elif type.lower() == "super duolingo":
+            activate_super(account)
+    except KeyboardInterrupt:
+        pass
+
+    print("\n[bright_yellow]Press any key to continue.[/]")
+    getch()
 
 def xp_farm(amount, account):
     if amount <= 0:
@@ -34,52 +66,49 @@ def xp_farm(amount, account):
     total_xp = 0
     xp_left = amount
 
-    try:
-        while True:
-            current_time = datetime.now(pytz.timezone(TIMEZONE))
-            dataget = {
-                "awardXp": True,
-                "completedBonusChallenge": True,
-                "fromLanguage": "en",
-                "hasXpBoost": False,
-                "illustrationFormat": "svg",
-                "isFeaturedStoryInPracticeHub": True,
-                "isLegendaryMode": True,
-                "isV2Redo": False,
-                "isV2Story": False,
-                "learningLanguage": "fr",
-                "masterVersion": True,
-                "maxScore": 0,
-                "score": 0,
-                "happyHourBonusXp": 469 if xp_left >= 499 else xp_left - 30,
-                "startTime": current_time.timestamp(),
-                "endTime": datetime.now(pytz.timezone(TIMEZONE)).timestamp(),
-            }
+    while True:
+        current_time = datetime.now(pytz.timezone(TIMEZONE))
+        dataget = {
+            "awardXp": True,
+            "completedBonusChallenge": True,
+            "fromLanguage": "en",
+            "hasXpBoost": False,
+            "illustrationFormat": "svg",
+            "isFeaturedStoryInPracticeHub": True,
+            "isLegendaryMode": True,
+            "isV2Redo": False,
+            "isV2Story": False,
+            "learningLanguage": "fr",
+            "masterVersion": True,
+            "maxScore": 0,
+            "score": 0,
+            "happyHourBonusXp": 469 if xp_left >= 499 else xp_left - 30,
+            "startTime": current_time.timestamp(),
+            "endTime": datetime.now(pytz.timezone(TIMEZONE)).timestamp(),
+        }
 
-            response = requests.post(url, headers=headers, json=dataget)
-            if response.status_code == 200:
-                result = response.json()
-                total_xp += result.get('awardedXp', 0)
-                _print("\r\033[2K", end="") if not DEBUG else None
-                print(f"[green]Farmed {total_xp}/{amount} XP (+{result.get('awardedXp', 0)} XP)[/]", end="" if not DEBUG else "\n")
-                xp_left -= result.get('awardedXp', 0)
+        response = requests.post(url, headers=headers, json=dataget)
+        if response.status_code == 200:
+            result = response.json()
+            total_xp += result.get('awardedXp', 0)
+            _print("\r\033[2K", end="") if not DEBUG else None
+            print(f"[green]Farmed {total_xp}/{amount} XP (+{result.get('awardedXp', 0)} XP)[/]", end="" if not DEBUG else "\n")
+            xp_left -= result.get('awardedXp', 0)
+        else:
+            if not DEBUG:
+                error_messages += f"\n[red]Failed to farm {499 if xp_left >= 499 else xp_left} XP ({total_xp}/{amount} XP)[/]"
+                error_count += 1
+                print(error_messages, end="")
+                _print(f"\r\033[{error_count}A", end="")
             else:
-                if not DEBUG:
-                    error_messages += f"\n[red]Failed to farm {499 if xp_left >= 499 else xp_left} XP ({total_xp}/{amount} XP)[/]"
-                    error_count += 1
-                    print(error_messages, end="")
-                    _print(f"\r\033[{error_count}A", end="")
-                else:
-                    print(f"[red]Failed to farm {499 if xp_left >= 499 else xp_left} XP ({total_xp}/{amount} XP)[/]")
-            if DEBUG:
-                print(
-                    f"[bold magenta][DEBUG][/] Status code {response.status_code}\n"
-                    f"[bold magenta][DEBUG][/] Content: {response.text}"
-                )
-            if xp_left <= 0:
-                break
-    except KeyboardInterrupt:
-        pass
+                print(f"[red]Failed to farm {499 if xp_left >= 499 else xp_left} XP ({total_xp}/{amount} XP)[/]")
+        if DEBUG:
+            print(
+                f"[bold magenta][DEBUG][/] Status code {response.status_code}\n"
+                f"[bold magenta][DEBUG][/] Content: {response.text}"
+            )
+        if xp_left <= 0:
+            break
 
     _print("\r\033[2K", end="") if not DEBUG else None
     print(f"[green]Successfully farmed {total_xp} XP![/]")
@@ -103,38 +132,35 @@ def gem_farm(amount, account):
     total_gems = 0
     gems_left = amount
 
-    try:
-        while True:
-            random.shuffle(reward_types)
-            for reward_type in reward_types:
-                url = f"https://www.duolingo.com/2017-06-30/users/{config['accounts'][account]['id']}/rewards/{reward_type}"
-                payload = {"consumed": True, "fromLanguage": fromLanguage, "learningLanguage": learningLanguage}
+    while True:
+        random.shuffle(reward_types)
+        for reward_type in reward_types:
+            url = f"https://www.duolingo.com/2017-06-30/users/{config['accounts'][account]['id']}/rewards/{reward_type}"
+            payload = {"consumed": True, "fromLanguage": fromLanguage, "learningLanguage": learningLanguage}
 
-                response = requests.patch(url, headers=headers, json=payload)
-                if response.status_code == 200:
-                    total_gems += 30
-                    _print("\r\033[2K", end="") if not DEBUG else None
-                    print(f"[green]Farmed {total_gems}/{amount} gems (+30 gems)[/]", end="" if not DEBUG else "\n")
-                    gems_left -= 30
+            response = requests.patch(url, headers=headers, json=payload)
+            if response.status_code == 200:
+                total_gems += 30
+                _print("\r\033[2K", end="") if not DEBUG else None
+                print(f"[green]Farmed {total_gems}/{amount} gems (+30 gems)[/]", end="" if not DEBUG else "\n")
+                gems_left -= 30
+            else:
+                if not DEBUG:
+                    error_messages += f"\n[red]Failed to farm 30 gems ({total_gems}/{amount} gems)[/]"
+                    error_count += 1
+                    print(error_messages, end="")
+                    _print(f"\r\033[{error_count}A", end="")
                 else:
-                    if not DEBUG:
-                        error_messages += f"\n[red]Failed to farm 30 gems ({total_gems}/{amount} gems)[/]"
-                        error_count += 1
-                        print(error_messages, end="")
-                        _print(f"\r\033[{error_count}A", end="")
-                    else:
-                        print(f"[red]Failed to farm 30 gems ({total_gems}/{amount} gems)[/]")
-                if DEBUG:
-                    print(
-                        f"[bold magenta][DEBUG][/] Status code {response.status_code}\n"
-                        f"[bold magenta][DEBUG][/] Content: {response.text}"
-                    )
-                if gems_left <= 0:
-                    break
+                    print(f"[red]Failed to farm 30 gems ({total_gems}/{amount} gems)[/]")
+            if DEBUG:
+                print(
+                    f"[bold magenta][DEBUG][/] Status code {response.status_code}\n"
+                    f"[bold magenta][DEBUG][/] Content: {response.text}"
+                )
             if gems_left <= 0:
                 break
-    except KeyboardInterrupt:
-        pass
+        if gems_left <= 0:
+            break
 
     _print("\r\033[2K", end="") if not DEBUG else None
     print(f"[green]Successfully farmed {total_gems} gems![/]")
@@ -161,102 +187,99 @@ def streak_farm(amount, account):
             print("[yellow]You have already reached the maximum amount of streak days possible![/]")
             return
 
-    try:
-        while True:
-            try:
-                simulated_day = streak_start_date - timedelta(days=day_count)
-                if simulated_day.year <= 0:
-                    print(f"[green]Reached the maximum amount of streak days possible! ({day_count}/{amount} days)[/]")
-                    return
-            except:
+    while True:
+        try:
+            simulated_day = streak_start_date - timedelta(days=day_count)
+            if simulated_day.year <= 0:
                 print(f"[green]Reached the maximum amount of streak days possible! ({day_count}/{amount} days)[/]")
                 return
+        except:
+            print(f"[green]Reached the maximum amount of streak days possible! ({day_count}/{amount} days)[/]")
+            return
 
-            if day_count == amount:
-                _print("\r\033[2K", end="") if not DEBUG else None
-                print("[blue]Finishing up...[/]", end="" if not DEBUG else "\n")
+        if day_count == amount:
+            _print("\r\033[2K", end="") if not DEBUG else None
+            print("[blue]Finishing up...[/]", end="" if not DEBUG else "\n")
 
-            session_payload = {
-                "challengeTypes": [
-                    "assist", "characterIntro", "characterMatch", "characterPuzzle",
-                    "characterSelect", "characterTrace", "characterWrite",
-                    "completeReverseTranslation", "definition", "dialogue",
-                    "extendedMatch", "extendedListenMatch", "form", "freeResponse",
-                    "gapFill", "judge", "listen", "listenComplete", "listenMatch",
-                    "match", "name", "listenComprehension", "listenIsolation",
-                    "listenSpeak", "listenTap", "orderTapComplete", "partialListen",
-                    "partialReverseTranslate", "patternTapComplete", "radioBinary",
-                    "radioImageSelect", "radioListenMatch", "radioListenRecognize",
-                    "radioSelect", "readComprehension", "reverseAssist",
-                    "sameDifferent", "select", "selectPronunciation",
-                    "selectTranscription", "svgPuzzle", "syllableTap",
-                    "syllableListenTap", "speak", "tapCloze", "tapClozeTable",
-                    "tapComplete", "tapCompleteTable", "tapDescribe", "translate",
-                    "transliterate", "transliterationAssist", "typeCloze",
-                    "typeClozeTable", "typeComplete", "typeCompleteTable",
-                    "writeComprehension"
-                ],
-                "fromLanguage": fromLanguage,
-                "isFinalLevel": False,
-                "isV2": True,
-                "juicy": True,
-                "learningLanguage": learningLanguage,
-                "smartTipsVersion": 2,
-                "type": "GLOBAL_PRACTICE"
-            }
-            response = requests.post("https://www.duolingo.com/2017-06-30/sessions", headers=headers, json=session_payload)
+        session_payload = {
+            "challengeTypes": [
+                "assist", "characterIntro", "characterMatch", "characterPuzzle",
+                "characterSelect", "characterTrace", "characterWrite",
+                "completeReverseTranslation", "definition", "dialogue",
+                "extendedMatch", "extendedListenMatch", "form", "freeResponse",
+                "gapFill", "judge", "listen", "listenComplete", "listenMatch",
+                "match", "name", "listenComprehension", "listenIsolation",
+                "listenSpeak", "listenTap", "orderTapComplete", "partialListen",
+                "partialReverseTranslate", "patternTapComplete", "radioBinary",
+                "radioImageSelect", "radioListenMatch", "radioListenRecognize",
+                "radioSelect", "readComprehension", "reverseAssist",
+                "sameDifferent", "select", "selectPronunciation",
+                "selectTranscription", "svgPuzzle", "syllableTap",
+                "syllableListenTap", "speak", "tapCloze", "tapClozeTable",
+                "tapComplete", "tapCompleteTable", "tapDescribe", "translate",
+                "transliterate", "transliterationAssist", "typeCloze",
+                "typeClozeTable", "typeComplete", "typeCompleteTable",
+                "writeComprehension"
+            ],
+            "fromLanguage": fromLanguage,
+            "isFinalLevel": False,
+            "isV2": True,
+            "juicy": True,
+            "learningLanguage": learningLanguage,
+            "smartTipsVersion": 2,
+            "type": "GLOBAL_PRACTICE"
+        }
+        response = requests.post("https://www.duolingo.com/2017-06-30/sessions", headers=headers, json=session_payload)
 
-            if response.status_code == 200:
-                session_data = response.json()
-            else:
-                print("[red]An error has occurred while trying to create a session.[/]")
-                if DEBUG:
-                    print(
-                        f"[bold magenta][DEBUG][/] Status code {response.status_code}\n"
-                        f"[bold magenta][DEBUG][/] Content: {response.text}"
-                    )
-                return
-            if 'id' not in session_data:
-                print("[red]Session ID not found in response data.[/]")
-                if DEBUG:
-                    print(
-                        f"[bold magenta][DEBUG][/] Status code {response.status_code}\n"
-                        f"[bold magenta][DEBUG][/] Content: {response.text}"
-                    )
-                return
-
-            try:
-                start_timestamp = int((simulated_day - timedelta(seconds=1)).timestamp())
-                end_timestamp = int(simulated_day.timestamp())
-            except ValueError:
-                print(f"[green]Reached the maximum amount of streak days possible! ({day_count}/{amount} days)[/]")
-                return
-
-            update_payload = {
-                **session_data,
-                "heartsLeft": 5,
-                "startTime": start_timestamp,
-                "endTime": end_timestamp,
-                "enableBonusPoints": False,
-                "failed": False,
-                "maxInLessonStreak": 9,
-                "shouldLearnThings": True
-            }
-            response = requests.put(f"https://www.duolingo.com/2017-06-30/sessions/{session_data['id']}", headers=headers, json=update_payload)
-
-            if response.status_code == 200:
-                day_count += 1
-                _print("\r\033[2K", end="") if not DEBUG else None
-                print(f"[green]Farmed {day_count}/{amount} streak days.[/]", end="" if not DEBUG else "\n")
-            else:
-                print(f"[red]Failed to extend streak ({day_count}/{amount} days)[/]")
+        if response.status_code == 200:
+            session_data = response.json()
+        else:
+            print("[red]An error has occurred while trying to create a session.[/]")
             if DEBUG:
-                print(f"[bold magenta][DEBUG][/] Status code {response.status_code}")
+                print(
+                    f"[bold magenta][DEBUG][/] Status code {response.status_code}\n"
+                    f"[bold magenta][DEBUG][/] Content: {response.text}"
+                )
+            return
+        if 'id' not in session_data:
+            print("[red]Session ID not found in response data.[/]")
+            if DEBUG:
+                print(
+                    f"[bold magenta][DEBUG][/] Status code {response.status_code}\n"
+                    f"[bold magenta][DEBUG][/] Content: {response.text}"
+                )
+            return
 
-            if day_count > amount:
-                break
-    except KeyboardInterrupt:
-        pass
+        try:
+            start_timestamp = int((simulated_day - timedelta(seconds=1)).timestamp())
+            end_timestamp = int(simulated_day.timestamp())
+        except ValueError:
+            print(f"[green]Reached the maximum amount of streak days possible! ({day_count}/{amount} days)[/]")
+            return
+
+        update_payload = {
+            **session_data,
+            "heartsLeft": 5,
+            "startTime": start_timestamp,
+            "endTime": end_timestamp,
+            "enableBonusPoints": False,
+            "failed": False,
+            "maxInLessonStreak": 9,
+            "shouldLearnThings": True
+        }
+        response = requests.put(f"https://www.duolingo.com/2017-06-30/sessions/{session_data['id']}", headers=headers, json=update_payload)
+
+        if response.status_code == 200:
+            day_count += 1
+            _print("\r\033[2K", end="") if not DEBUG else None
+            print(f"[green]Farmed {day_count}/{amount} streak days.[/]", end="" if not DEBUG else "\n")
+        else:
+            print(f"[red]Failed to extend streak ({day_count}/{amount} days)[/]")
+        if DEBUG:
+            print(f"[bold magenta][DEBUG][/] Status code {response.status_code}")
+
+        if day_count > amount:
+            break
 
     _print("\r\033[2K", end="") if not DEBUG else None
     print(f"[green]Successfully farmed {day_count - 1} streak days![/]")
@@ -478,41 +501,13 @@ try:
         for string in main_menu:
             print(string if main_menu.index(string) < 2 else f"[bold]{string}[/]" if f"{option.upper()}. " in string else f"  [bright_black]{string.split("]", maxsplit=1)[1]}")
         if option == "1":
-            try:
-                amount = int(input("Enter amount of XP [Enter to cancel]: "))
-            except ValueError:
-                continue
-            print(f"[blue]Starting to farm {amount} XP...[/]", end="")
-            _print("\r", end="")
-            xp_farm(amount, account)
-            print("[bright_yellow]Press any key to continue.[/]")
-            getch()
+            start_task("XP", account)
         elif option == "2":
-            try:
-                amount = int(input("Enter amount of gems [Enter to cancel]: "))
-            except ValueError:
-                continue
-            print(f"[blue]Starting to farm {amount} gems...[/]", end="")
-            _print("\r", end="")
-            gem_farm(amount, account)
-            print("[bright_yellow]Press any key to continue.[/]")
-            getch()
+            start_task("gems", account)
         elif option == "3":
-            try:
-                amount = int(input("Enter amount of streak days [Enter to cancel]: "))
-            except ValueError:
-                continue
-            print(f"[blue]Starting to farm {amount} streak days...[/]", end="")
-            _print("\r", end="")
-            streak_farm(amount, account)
-            print("[bright_yellow]Press any key to continue.[/]")
-            getch()
+            start_task("streak days", account)
         elif option == "4":
-            print("[bright_yellow]Activating 3 days of Super Duolingo...[/]", end="")
-            _print("\r", end="")
-            activate_super(account)
-            print("[bright_yellow]Press any key to continue.[/]")
-            getch()
+            start_task("Super Duolingo", account, request_amount=False)
         elif option == "5":
             while True:
                 items = {
@@ -565,7 +560,7 @@ try:
                     break
         elif option == "6":
             clear()
-            os.system("python saver.py")
+            os.system(f"{sys.executable} saver.py")
             print("[bright_yellow]Press any key to continue.[/]")
             getch()
         elif option == "9":
