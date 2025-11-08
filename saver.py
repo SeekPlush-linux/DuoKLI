@@ -43,7 +43,7 @@ def farm_xp(account, amount):
             "startTime": now.timestamp(),
             "endTime": datetime.now(pytz.timezone(TIMEZONE)).timestamp(),
         }
-        response = requests.post('https://stories.duolingo.com/api2/stories/fr-en-le-passeport/complete', headers=headers, json=dataget)
+        response = requests.post('https://stories.duolingo.com/api2/stories/fr-en-le-passeport/complete', headers=headers, json=dataget, timeout=10)
         if response.status_code == 200:
             response_data = response.json()
             amount -= response_data.get('awardedXp', 0)
@@ -71,7 +71,7 @@ def leaderboard_registration(account):
     headers = get_headers(account)
 
     url = f"https://www.duolingo.com/2017-06-30/users/{duo_id}/privacy-settings"
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=10)
     if response.status_code != 200:
         print(f"{current_time()} [red]Failed to get privacy settings.[/]")
         if DEBUG:
@@ -93,7 +93,7 @@ def leaderboard_registration(account):
     if was_private:
         url = f"https://www.duolingo.com/2017-06-30/users/{duo_id}/privacy-settings?fields=privacySettings"
         payload = {"DISABLE_SOCIAL": False}
-        response = requests.patch(url, headers=headers, json=payload)
+        response = requests.patch(url, headers=headers, json=payload, timeout=10)
         if response.status_code != 200:
             print(f"{current_time()} [red]Failed to set profile to public.[/]")
             if DEBUG:
@@ -113,7 +113,7 @@ def leaderboard_registration(account):
     if was_private:
         url = f"https://www.duolingo.com/2017-06-30/users/{duo_id}/privacy-settings?fields=privacySettings"
         payload = {"DISABLE_SOCIAL": True}
-        response = requests.patch(url, headers=headers, json=payload)
+        response = requests.patch(url, headers=headers, json=payload, timeout=10)
         if response.status_code != 200:
             print(f"{current_time()} [red]Failed to restore privacy settings.[/]")
             if DEBUG:
@@ -176,7 +176,7 @@ def save_streak(account):
         "type": "GLOBAL_PRACTICE"
     }
     session_url = "https://www.duolingo.com/2017-06-30/sessions"
-    response = requests.post(session_url, headers=headers, json=session_payload)
+    response = requests.post(session_url, headers=headers, json=session_payload, timeout=10)
 
     if response.status_code == 200:
         if DEBUG:
@@ -211,7 +211,7 @@ def save_streak(account):
     }
     update_url = f"https://www.duolingo.com/2017-06-30/sessions/{session_data['id']}"
 
-    response = requests.put(update_url, headers=headers, json=update_payload)
+    response = requests.put(update_url, headers=headers, json=update_payload, timeout=10)
     if response.status_code == 200:
         if DEBUG:
             print(f"{current_time()} [bold magenta][DEBUG][/] Updated session")
@@ -242,7 +242,7 @@ def save_league(account, position):
     url = (f"https://duolingo-leaderboards-prod.duolingo.com/leaderboards/7d9f5dd1-8423-491a-91f2-2532052038ce/users/{duo_id}"
            f"?client_unlocked=true&get_reactions=true&_={int(time.time() * 1000)}")
     while True:
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=10)
         if response.status_code != 200:
             if DEBUG:
                 _print("\a", end="")
@@ -302,7 +302,7 @@ try:
     print("[blue]  Starting saver...[/]", end="")
     _print("\r", end="")
 
-    if not any([acc['autostreak'] for acc in config['accounts']]) and not any([acc['autoleague']['active'] for acc in config['accounts']]):
+    if not any(acc['autostreak'] or acc['autoleague']['active'] for acc in config['accounts']):
         print("[red]  There are no accounts with a saver feature enabled![/]\n")
         sys.exit()
 

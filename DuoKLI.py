@@ -3,10 +3,9 @@ _print = print
 from rich import print
 from datetime import datetime, timedelta
 from tzlocal import get_localzone
-from utils import getch, current_time, time_taken, get_headers, get_duo_info, clear, fetch_username_and_id, farm_progress
+from utils import getch, inp, current_time, time_taken, get_headers, get_duo_info, clear, fetch_username_and_id, farm_progress
 
 # TODO: Add endless farming
-# TODO: Add "Time Taken" to farm functions
 # TODO: Port some functions from [my private project] to here
 # TODO: Add questsaver function to the saver script
 # TODO: Implement multi-threading and proxies
@@ -15,10 +14,9 @@ from utils import getch, current_time, time_taken, get_headers, get_duo_info, cl
 # TODO: Auto login to the preferred account
 # TODO: Add Verbose Mode in addition to Debug Mode
 # TODO: Fix DuoKLI crashing when trying to farm on the newly added account right after adding it
-# TODO: Use the "Alternate Buffer" terminal feature
-# TODO: Use Escape key instead of Enter key for cancelling actions
+# TODO: Implement "Check for updates" setting that will check the GitHub repo for updates, automatically update DuoKLI if an update is found
 
-VERSION = "v1.1.0"
+VERSION = "v1.1.1"
 TIMEZONE = str(get_localzone())
 
 with open("config.json", "r") as f:
@@ -31,7 +29,7 @@ def title_string():
 def start_task(type: str, account: int, request_amount: bool = True):
     if request_amount:
         try:
-            amount = int(input(f" Enter amount of {type} [Enter to cancel]: "))
+            amount = int(inp(f" Enter amount of {type}"))
         except ValueError:
             return
 
@@ -72,8 +70,8 @@ def xp_farm(amount, account):
     total_xp = 0
     xp_left = amount
 
-    with farm_progress() as prog:
-        task = prog.add_task(f" [yellow]Farming {amount:,} XP...[/]", total=amount)
+    with farm_progress("XP", "yellow") as prog:
+        task = prog.add_task("", total=amount)
         start = time.monotonic()
         while True:
             try:
@@ -97,7 +95,7 @@ def xp_farm(amount, account):
                     "endTime": datetime.now(pytz.timezone(TIMEZONE)).timestamp(),
                 }
 
-                response = requests.post(url, headers=headers, json=dataget)
+                response = requests.post(url, headers=headers, json=dataget, timeout=10)
 
                 if response.status_code == 200:
                     result = response.json()
@@ -134,15 +132,15 @@ def gem_farm(amount, account):
     total_gems = 0
     gems_left = amount
 
-    with farm_progress() as prog:
-        task = prog.add_task(f" [cyan]Farming {amount:,} gems...[/]", total=amount)
+    with farm_progress("gems", "cyan") as prog:
+        task = prog.add_task("", total=amount)
         start = time.monotonic()
         while True:
             try:
                 url = f"https://www.duolingo.com/2017-06-30/users/{config['accounts'][account]['id']}/rewards/SKILL_COMPLETION_BALANCED-…-2-GEMS"
                 payload = {"consumed": True, "fromLanguage": fromLanguage, "learningLanguage": learningLanguage}
 
-                response = requests.patch(url, headers=headers, json=payload)
+                response = requests.patch(url, headers=headers, json=payload, timeout=10)
 
                 if response.status_code == 200:
                     total_gems += 30
@@ -177,6 +175,7 @@ def streak_farm(amount, account):
     user_tz = pytz.timezone(TIMEZONE)
     now = datetime.now(user_tz)
     day_count = 0
+    is_finishing = False
 
     if not current_streak:
         streak_start_date = now
@@ -186,8 +185,8 @@ def streak_farm(amount, account):
             print(" [yellow]You have already reached the maximum amount of streak days possible![/]")
             return
 
-    with farm_progress() as prog:
-        task = prog.add_task(f" [sandy_brown]Farming {amount:,} streak days...[/]", total=amount)
+    with farm_progress("streak days", "sandy_brown") as prog:
+        task = prog.add_task("", total=amount)
         start = time.monotonic()
         while True:
             try:
@@ -203,6 +202,7 @@ def streak_farm(amount, account):
                     return {'total': day_count, 'start': start, 'end': end}
 
                 if day_count == amount:
+                    is_finishing = True
                     print(" [blue]Finishing up...[/]\n")
 
                 session_payload = {
@@ -234,7 +234,7 @@ def streak_farm(amount, account):
                     "type": "GLOBAL_PRACTICE"
                 }
 
-                response = requests.post("https://www.duolingo.com/2017-06-30/sessions", headers=headers, json=session_payload)
+                response = requests.post("https://www.duolingo.com/2017-06-30/sessions", headers=headers, json=session_payload, timeout=10)
 
                 if response.status_code == 200:
                     session_data = response.json()
@@ -276,11 +276,11 @@ def streak_farm(amount, account):
                     "shouldLearnThings": True
                 }
 
-                response = requests.put(f"https://www.duolingo.com/2017-06-30/sessions/{session_data['id']}", headers=headers, json=update_payload)
+                response = requests.put(f"https://www.duolingo.com/2017-06-30/sessions/{session_data['id']}", headers=headers, json=update_payload, timeout=10)
 
                 if response.status_code == 200:
                     day_count += 1
-                    prog.update(task, completed=day_count)
+                    prog.update(task, completed=day_count) if not is_finishing else None
                     if DEBUG:
                         print(f"{current_time()} [bold magenta][DEBUG][/] Session updated")
                 else:
@@ -306,7 +306,7 @@ def activate_super(account):
     headers = get_headers(account)
     json_data = {"itemName":"immersive_subscription","productId":"com.duolingo.immersive_free_trial_subscription"}
 
-    response = requests.post(url, headers=headers, json=json_data)
+    response = requests.post(url, headers=headers, json=json_data, timeout=10)
 
     try:
         res_json = response.json()
@@ -380,7 +380,7 @@ def give_item(account, item):
         }
         url = f"https://www.duolingo.com/2017-06-30/users/{config['accounts'][account]['id']}/shop-items"
 
-    response = requests.post(url, headers=headers, json=data)
+    response = requests.post(url, headers=headers, json=data, timeout=10)
     if response.status_code == 200:
         print(f" [green]Successfully received item \"{item_name}\"![/]")
     else:
@@ -431,13 +431,16 @@ try:
                             break
                         elif acc_manager_option.isdigit():
                             acc_to_update = int(acc_manager_option)-1
-                            print(" [yellow]U. Update Token[/] | [magenta]J. Move Down[/] | [magenta]K. Move Up[/] | [red]R. Remove[/]  [bright_black][Enter to cancel][/]")
-                            while acc_manager_option not in ['\r', 'U', 'J', 'K', 'R']:
+                            print(" [yellow]U. Update Token[/] | [magenta]J. Move Down[/] | [magenta]K. Move Up[/] | [red]R. Remove[/]  [bright_black][Esc to cancel][/]")
+                            while acc_manager_option not in ['\033', 'U', 'J', 'K', 'R']:
                                 acc_manager_option = getch().upper()
-                            if acc_manager_option == "\r":
+                            if acc_manager_option == "\033":
                                 continue
                             elif acc_manager_option == "U":
-                                new_token = input(" Enter your new token [Enter to cancel]: ")
+                                try:
+                                    new_token = inp("\n Enter your new token")
+                                except ValueError:
+                                    continue
                                 if not new_token:
                                     continue
                                 print(" [bright_yellow]Updating your account credentials, please wait...[/]", end='\r')
@@ -461,13 +464,19 @@ try:
                                 if acc_to_update != 0:
                                     config['accounts'][acc_to_update], config['accounts'][acc_to_update-1] = config['accounts'][acc_to_update-1], config['accounts'][acc_to_update]
                             elif acc_manager_option == "R":
-                                config['accounts'].pop(acc_to_update)
+                                print(f"\n [bright_red]Are you sure you want to remove {config['accounts'][acc_to_update]['username']}? \\[y/N][/]")
+                                if getch().upper() == "Y":
+                                    config['accounts'].pop(acc_to_update)
                         elif acc_manager_option == "A":
-                            new_token = input(" Enter your account's token [Enter to cancel]: ")
+                            try:
+                                new_token = inp(" Enter your account's token")
+                            except ValueError:
+                                continue
                             if not new_token:
                                 continue
                             print(" [bright_yellow]Adding your account, please wait...[/]", end='\r')
-                            new_account = fetch_username_and_id(new_token, DEBUG)
+                            # new_account = fetch_username_and_id(new_token, DEBUG)
+                            new_account = {"username": config['accounts'][1]['username'], "id": config['accounts'][1]['id']}
                             _print("\033[2K", end="")
                             if isinstance(new_account, str):
                                 print(new_account)
@@ -627,7 +636,7 @@ try:
                             print(string if saver_settings_menu.index(string) < 2 or saver_settings_menu.index(string) == len(saver_settings_menu)-1 else f"[bold bright_yellow]{string}[/]" if f" {saver_row_option.upper()}. " in string else string)
                         if saver_row_option == "0":
                             break
-                        print("\n  [bright_blue]Press Q for Streaksaver, W for Leaguesaver, E for Position, any other key to cancel[/]")
+                        print("\n [sandy_brown]Q. Streaksaver[/] | [bright_green]W. Leaguesaver[/] | [cyan]E. Position[/]  [bright_black][Any other key to cancel][/]")
                         saver_col_option = getch().upper()
                         if saver_col_option == "Q":
                             config['accounts'][int(saver_row_option)-1]['autostreak'] = not config['accounts'][int(saver_row_option)-1]['autostreak']
@@ -635,7 +644,7 @@ try:
                             config['accounts'][int(saver_row_option)-1]['autoleague']['active'] = not config['accounts'][int(saver_row_option)-1]['autoleague']['active']
                         elif saver_col_option == "E":
                             try:
-                                amount = int(input("\n  Enter league position [Enter to cancel]: "))
+                                amount = int(input("\n Enter league position [Enter to cancel, 0 to remove]: "))
                             except ValueError:
                                 continue
                             config['accounts'][int(saver_row_option)-1]['autoleague']['position'] = amount if amount >= 1 and amount <= 30 else None

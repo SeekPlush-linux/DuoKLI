@@ -1,4 +1,5 @@
 import requests, random, sys, os, json, re, base64
+_print = print
 from rich import print
 from rich.progress import Progress, TextColumn, TimeRemainingColumn, TimeElapsedColumn
 from datetime import datetime
@@ -43,9 +44,30 @@ def getch():
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
     return ch
 
-def farm_progress(): 
+def inp(s) -> str:
+    _print("\033[?25h", end="")
+    print(f"{s} [bright_black][Esc to cancel][/]: ", end="")
+    r = []
+    while True:
+        c = getch()
+        if c == "\033":
+            _print("\033[?25l", end="")
+            raise ValueError
+        elif c == "\r":
+            _print("\n\033[?25l", end="")
+            return "".join(r)
+        elif c == "\177":
+            if r:
+                _print("\033[D\033[0K", end="", flush=True)
+                del r[-1]
+        else:
+            _print(c, end="", flush=True)
+            r += c
+
+def farm_progress(type: str, color: str): 
     return Progress(
-        *Progress.get_default_columns()[:3],
+        TextColumn(" ["+color+"]Farming {task.completed:,}/{task.total:,} "+type+"...[/]"),
+        *Progress.get_default_columns()[1:3],
         TextColumn("[cyan]ETA:"),
         TimeRemainingColumn(),
         TextColumn("[yellow]Elapsed:"),
