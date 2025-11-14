@@ -129,6 +129,16 @@ def get_duo_info(account: int, debug: bool = False):
         if debug:
             print(f"{current_time()} [bold magenta][DEBUG][/] Retrieved Duolingo info for user {config['accounts'][account]['username']}")
         return response.json()
+    elif response.status_code == 403:
+        if debug:
+            print(f"{current_time()} [bold magenta][DEBUG][/] Rate limited when retrieving Duolingo info for user {config['accounts'][account]['username']}")
+        
+        print(" [yellow]⚠️  You have been rate limited by Duo[/]")
+        print(" [yellow]   You will not be able to use DuoKLI or Duolingo for some minutes.[/]\n")
+        print(" [yellow]   Press any key to cancel.[/]")
+        ch = getch()
+
+        return None
     else:
         if debug:
             print(
