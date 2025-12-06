@@ -31,6 +31,9 @@ def time_taken(t: int | float) -> str:
     m, s = divmod(r, 60)
     return f"{d:02}:{h:02}:{m:02}:{s:02}" if d else f"{h:02}:{m:02}:{s:02}"
 
+def fint(n: int | float) -> str:
+    return f"{n:,}" if n != 0 else "inf"
+
 def getch() -> str:
     if os.name == "nt":
         ch = msvcrt.getch().decode("utf-8")
@@ -64,12 +67,13 @@ def inp(s) -> str:
             _print(c, end="", flush=True)
             r += c
 
-def farm_progress(type: str, color: str) -> Progress:
+def farm_progress(type: str, color: str, is_endless: bool = False) -> Progress:
     return Progress(
-        TextColumn(" ["+color+"]Farming {task.completed:,}/{task.total:,} "+type+"...[/]"),
+        TextColumn(" ["+color+"]Farming {task.completed:,}/inf "+type+"...[/]") if is_endless \
+            else TextColumn(" ["+color+"]Farming {task.completed:,}/{task.total:,} "+type+"...[/]"),
         *Progress.get_default_columns()[1:3],
-        TextColumn("[cyan]ETA:"),
-        TimeRemainingColumn(),
+        TextColumn("[cyan]ETA:") if not is_endless else "\033[D",
+        TimeRemainingColumn() if not is_endless else "\033[D",
         TextColumn("[yellow]Elapsed:"),
         TimeElapsedColumn(),
         "\033[D"
@@ -121,10 +125,13 @@ def randomize_mobile_user_agent() -> str:
     return user_agent
 
 def warn_request_count(requests_needed: int, threshold: int = 200) -> bool:
-    if requests_needed < threshold:
+    if requests_needed < threshold and requests_needed != 0:
         return True
     try:
-        print(f"\n [yellow]⚠️ Warning: This will send {requests_needed:,} requests to Duolingo's servers![/]")
+        if requests_needed == 0:
+            print(f"\n [yellow]⚠️ Warning: This will endlessly send requests to Duolingo's servers![/]")
+        else:
+            print(f"\n [yellow]⚠️ Warning: This will send {requests_needed:,} requests to Duolingo's servers![/]")
         print(" [yellow]   This may result in your account being rate-limited for some time.[/]")
         print(f" [bright_black]   (you're seeing this as you're about to send +{threshold} requests, that's +{threshold * 30:,} gems!)[/] \n")
         print(" [yellow]   Press any key to continue or Ctrl+C to cancel.[/]")
@@ -136,7 +143,7 @@ def warn_request_count(requests_needed: int, threshold: int = 200) -> bool:
 
 def ratelimited_warning():
     try:
-        print(" [yellow]⚠️  You have been rate-limited by Duolingo![/]")
+        print(" [yellow]⚠️ You have been rate-limited by Duolingo![/]")
         print(" [yellow]   You will not be able to farm for several minutes.[/]\n")
         print(" [yellow]   Press any key to cancel.[/]")
         getch()

@@ -1,12 +1,11 @@
-import requests, pytz, sys, os, json, traceback, time, concurrent.futures
+import requests, pytz, sys, os, json, traceback, time, concurrent.futures, threading
 _print = print
 from rich import print
 from datetime import datetime, timedelta
 from tzlocal import get_localzone
-from utils import (getch, inp, current_time, time_taken, get_headers, get_duo_info, clear,
+from utils import (getch, fint, inp, current_time, time_taken, get_headers, get_duo_info, clear,
                    fetch_username_and_id, farm_progress, warn_request_count, ratelimited_warning)
 
-# TODO: Add endless farming
 # TODO: Port some functions from [my private project] to here
 # TODO: Add questsaver function to the saver script
 # TODO: Implement multi-threading and proxies
@@ -18,7 +17,7 @@ from utils import (getch, inp, current_time, time_taken, get_headers, get_duo_in
 # TODO: Implement "Check for updates" setting that will check the GitHub repo for updates, automatically update DuoKLI if an update is found
 # TODO: Write debug info into a log file
 
-VERSION = "v1.1.3"
+VERSION = "v1.2.0"
 TIMEZONE = str(get_localzone())
 
 with open("config.json", "r") as f:
@@ -36,16 +35,20 @@ def start_task(type: str, account: int, request_amount: bool = True) -> bool:
             return False
 
     if type.lower() in ['gems', 'fast gems']:
-        per_request = 30
-        requests_needed = (amount + per_request - 1) // per_request
-        if not warn_request_count(requests_needed):
-            return False
+        if amount == 0:
+            if not warn_request_count(0):
+                return False
+        else:
+            per_request = 30
+            requests_needed = (amount + per_request - 1) // per_request
+            if not warn_request_count(requests_needed):
+                return False
 
     if type == "Super Duolingo":
         print(" [bright_yellow]Activating 3 days of Super Duolingo...[/]", end="")
     else:
         print("\n  [bright_yellow]Press Ctrl+C to stop farming.[/]\n")
-        print(f" [blue]Starting to farm {amount:,} {type}...[/]", end="")
+        print(f" [blue]Starting to farm {fint(amount)} {type}...[/]", end="")
     _print("\r", end="")
 
     if type.lower() == "xp":
@@ -71,18 +74,18 @@ def start_task(type: str, account: int, request_amount: bool = True) -> bool:
     return True
 
 def xp_farm(amount, account):
-    if amount <= 0:
-        print(" [red]Cannot farm 0 or negative XP![/]")
+    if amount < 0:
+        print(" [red]Cannot farm negative XP![/]")
         return
 
     url = f'https://stories.duolingo.com/api2/stories/fr-en-le-passeport/complete'
     headers = get_headers(account)
 
     total_xp = 0
-    xp_left = amount
+    xp_left = amount if amount else sys.maxsize
 
-    with farm_progress("XP", "yellow") as prog:
-        task = prog.add_task("", total=amount)
+    with farm_progress("XP", "yellow", amount == 0) as prog:
+        task = prog.add_task("", total=amount if amount else None)
         start = time.monotonic()
         while True:
             try:
@@ -114,7 +117,7 @@ def xp_farm(amount, account):
                     prog.update(task, completed=total_xp)
                     xp_left -= result.get('awardedXp', 0)
                 else:
-                    print(f" [red]Failed to farm {499 if xp_left >= 499 else xp_left} XP ({total_xp:,}/{amount:,} XP)[/]")
+                    print(f" [red]Failed to farm {499 if xp_left >= 499 else xp_left} XP ({total_xp:,}/{fint(amount)} XP)[/]")
                 if DEBUG:
                     print(
                         f"{current_time()} [bold magenta][DEBUG][/] Status code {response.status_code}\n"
@@ -125,14 +128,14 @@ def xp_farm(amount, account):
             except KeyboardInterrupt:
                 break
             except Exception as e:
-                print(f" [bold red]An error occurred ({total_xp:,}/{amount:,} XP): {e}[/]")
+                print(f" [bold red]An error occurred ({total_xp:,}/{fint(amount)} XP): {e}[/]")
 
     end = time.monotonic()
     return {'total': total_xp, 'start': start, 'end': end}
 
 def gem_farm(amount, account):
-    if amount <= 0:
-        print(" [red]Cannot farm 0 or negative gems![/]")
+    if amount < 0:
+        print(" [red]Cannot farm negative gems![/]")
         return
 
     headers = get_headers(account)
@@ -144,10 +147,10 @@ def gem_farm(amount, account):
     requests_needed = (amount + per_request - 1) // per_request
     expected_total = requests_needed * per_request
     total_gems = 0
-    gems_left = expected_total
+    gems_left = expected_total if amount else sys.maxsize
 
-    with farm_progress("gems", "cyan") as prog:
-        task = prog.add_task("", total=expected_total)
+    with farm_progress("gems", "cyan", amount == 0) as prog:
+        task = prog.add_task("", total=expected_total if amount else None)
         start = time.monotonic()
         while True:
             try:
@@ -164,7 +167,7 @@ def gem_farm(amount, account):
                     ratelimited_warning()
                     return
                 else:
-                    print(f" [red]Failed to farm {per_request} gems ({total_gems:,}/{expected_total:,} gems)[/]")
+                    print(f" [red]Failed to farm {per_request} gems ({total_gems:,}/{fint(expected_total)} gems)[/]")
                 if DEBUG:
                     print(
                         f"{current_time()} [bold magenta][DEBUG][/] Status code {response.status_code}\n"
@@ -175,14 +178,14 @@ def gem_farm(amount, account):
             except KeyboardInterrupt:
                 break
             except Exception as e:
-                print(f" [bold red]An error occurred ({total_gems:,}/{expected_total:,} gems): {e}[/]")
+                print(f" [bold red]An error occurred ({total_gems:,}/{fint(expected_total)} gems): {e}[/]")
 
     end = time.monotonic()
     return {'total': total_gems, 'start': start, 'end': end}
 
 def fast_gem_farm(amount, account):
-    if amount <= 0:
-        print(" [red]Cannot farm 0 or negative gems![/]")
+    if amount < 0:
+        print(" [red]Cannot farm negative gems![/]")
         return
 
     headers = get_headers(account)
@@ -195,28 +198,34 @@ def fast_gem_farm(amount, account):
     expected_total = requests_needed * per_request
     total_gems = 0
 
-    with farm_progress("gems", "cyan") as prog:
-        task = prog.add_task("", total=expected_total)
+    stop_event = threading.Event()
+
+    with farm_progress("gems", "cyan", amount == 0) as prog:
+        task = prog.add_task("", total=expected_total if amount else None)
         start = time.monotonic()
+        url = f"https://www.duolingo.com/2017-06-30/users/{config['accounts'][account]['id']}/rewards/SKILL_COMPLETION_BALANCED-…-2-GEMS"
+        payload = {"consumed": True, "fromLanguage": fromLanguage, "learningLanguage": learningLanguage}
+
+        def do_patch():
+            if stop_event.is_set():
+                return None, "stopped"
+            try:
+                resp = requests.patch(url, headers=headers, json=payload, timeout=10)
+                return resp.status_code, getattr(resp, 'text', '')
+            except Exception as ex:
+                return None, str(ex)
+
+        max_workers = min(20, requests_needed) if requests_needed > 0 else 1 if amount else 20
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+        futures = []
         try:
-            url = f"https://www.duolingo.com/2017-06-30/users/{config['accounts'][account]['id']}/rewards/SKILL_COMPLETION_BALANCED-…-2-GEMS"
-            payload = {"consumed": True, "fromLanguage": fromLanguage, "learningLanguage": learningLanguage}
-
-            def do_patch():
-                try:
-                    resp = requests.patch(url, headers=headers, json=payload, timeout=10)
-                    return resp.status_code, getattr(resp, 'text', '')
-                except Exception as ex:
-                    return None, str(ex)
-
-            max_workers = min(20, requests_needed) if requests_needed > 0 else 1
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
-                futures = [ex.submit(do_patch) for _ in range(requests_needed)]
+            while not stop_event.is_set():
+                futures = [executor.submit(do_patch) for _ in range(requests_needed if amount else 1000)]
                 for fut in concurrent.futures.as_completed(futures):
+                    if stop_event.is_set():
+                        break
                     try:
                         status, content = fut.result()
-                    except KeyboardInterrupt:
-                        raise
                     except Exception as e:
                         status, content = None, str(e)
                     if status == 200:
@@ -224,18 +233,28 @@ def fast_gem_farm(amount, account):
                         prog.update(task, completed=total_gems)
                     elif status == 403:
                         ratelimited_warning()
+                        stop_event.set()
                         return
                     else:
-                        print(f" [red]Failed to farm {per_request} gems ({total_gems:,}/{expected_total:,} gems)[/]")
+                        print(f" [red]Failed to farm {per_request} gems ({total_gems:,}/{fint(expected_total)} gems)[/]")
                     if DEBUG:
                         print(
                             f"{current_time()} [bold magenta][DEBUG][/] Status code {status}\n"
                             f"{current_time()} [bold magenta][DEBUG][/] Content: {content}\n"
                         )
+                if amount:
+                    break
         except KeyboardInterrupt:
-            pass
+            stop_event.set()
+            for fut in futures:
+                fut.cancel()
         except Exception as e:
-            print(f" [bold red]An error occurred ({total_gems:,}/{expected_total:,} gems): {e}[/]")
+            print(f" [bold red]An error occurred ({total_gems:,}/{fint(expected_total)} gems): {e}[/]")
+        finally:
+            try:
+                executor.shutdown(wait=False)
+            except Exception:
+                pass
 
     end = time.monotonic()
     return {'total': total_gems, 'start': start, 'end': end}
@@ -262,8 +281,9 @@ def streak_farm(amount, account):
             print(" [yellow]You have already reached the maximum amount of streak days possible![/]")
             return
 
-    with farm_progress("streak days", "sandy_brown") as prog:
-        task = prog.add_task("", total=amount)
+    with farm_progress("streak days", "sandy_brown", amount == 0) as prog:
+        task = prog.add_task("", total=amount if amount else None)
+        amount = amount if amount else sys.maxsize
         start = time.monotonic()
         while True:
             try:
@@ -318,7 +338,7 @@ def streak_farm(amount, account):
                     if DEBUG:
                         print(f"{current_time()} [bold magenta][DEBUG][/] Session created")
                 else:
-                    print(f" [red]Failed to create a session ({day_count:,}/{amount:,} days)[/]")
+                    print(f" [red]Failed to create a session ({day_count:,}/{fint(amount)} days)[/]")
                     if DEBUG:
                         print(
                             f"{current_time()} [bold magenta][DEBUG][/] Status code {response.status_code}\n"
@@ -326,7 +346,7 @@ def streak_farm(amount, account):
                         )
                     continue
                 if 'id' not in session_data:
-                    print(f" [red]Session ID not found in response data ({day_count:,}/{amount:,} days)[/]")
+                    print(f" [red]Session ID not found in response data ({day_count:,}/{fint(amount)} days)[/]")
                     if DEBUG:
                         print(
                             f"{current_time()} [bold magenta][DEBUG][/] Status code {response.status_code}\n"
@@ -361,7 +381,7 @@ def streak_farm(amount, account):
                     if DEBUG:
                         print(f"{current_time()} [bold magenta][DEBUG][/] Session updated")
                 else:
-                    print(f" [red]Failed to extend streak ({day_count:,}/{amount:,} days)[/]")
+                    print(f" [red]Failed to extend streak ({day_count:,}/{fint(amount)} days)[/]")
                 if DEBUG:
                     print(
                         f"{current_time()} [bold magenta][DEBUG][/] Status code {response.status_code}\n"
@@ -373,7 +393,7 @@ def streak_farm(amount, account):
             except KeyboardInterrupt:
                 break
             except Exception as e:
-                print(f" [bold red]An error occurred ({day_count:,}/{amount:,} days): {e}[/]")
+                print(f" [bold red]An error occurred ({day_count:,}/{fint(amount)} days): {e}[/]")
 
     end = time.monotonic()
     return {'total': day_count-1, 'start': start, 'end': end}
