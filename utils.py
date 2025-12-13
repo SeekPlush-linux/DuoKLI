@@ -1,4 +1,4 @@
-import requests, random, sys, os, json, re, base64
+import requests, random, sys, os, json, re, base64, uuid
 _print = print
 from rich import print
 from rich.progress import Progress, TextColumn, TimeRemainingColumn, TimeElapsedColumn
@@ -47,7 +47,7 @@ def getch() -> str:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
     return ch
 
-def inp(s) -> str:
+def inp(s, password: bool = False) -> str:
     _print("\033[?25h", end="")
     print(f"{s} [bright_black][Esc to cancel][/]: ", end="")
     r = []
@@ -64,7 +64,7 @@ def inp(s) -> str:
                 _print("\033[D\033[0K", end="", flush=True)
                 del r[-1]
         else:
-            _print(c, end="", flush=True)
+            _print("*" if password else c, end="", flush=True)
             r += c
 
 def farm_progress(type: str, color: str, is_endless: bool = False) -> Progress:
@@ -202,3 +202,42 @@ def fetch_username_and_id(token: str, debug: bool = False) -> dict[str, int | st
     username = response.json().get("username", "Unknown")
 
     return {"username": username, "id": user_id}
+
+def login_password(identifier: str, password: str, debug: bool = False) -> dict[str, int | str, str] | None:
+    url = "https://ios-api-cf.duolingo.com/2023-05-23/login"
+    headers = {
+        "accept": "application/json",
+        "connection": "Keep-Alive",
+        "content-type": "application/json",
+        "user-agent": "DuolingoMobile/7.101.1 (iPhone; iOS 26.1; Scale/2.00)",
+        "x-amzn-trace-id": "User=0",
+    }
+    
+    data = {
+        "identifier": identifier,
+        "password": password,
+        "distinctId": str(uuid.uuid4()).upper(),
+        "fields": "id,username"
+    }
+    
+    response = requests.post(url, headers=headers, json=data)
+
+    if response.status_code != 200:
+        s = " [bold red]Failed to log in to your Duolingo account. Make sure you're using the correct credentials and that you can log in using a password.[/]"
+        if debug:
+            s += (
+                f"\n[bold magenta][DEBUG][/] Status code {response.status_code}\n"
+                f"[bold magenta][DEBUG][/] Content: {response.text}"
+            )
+        return s
+
+    data = response.json()
+    username = data.get("username", "Unknown")
+    user_id = data.get("id")
+    try:
+        jwt_token = response.cookies.get('jwt_token')
+    except requests.cookies.CookieConflictError:
+        jwt_token = response.headers.get('jwt')
+    
+    if jwt_token:
+        return {"username": username, "id": user_id, "token": jwt_token}
