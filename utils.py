@@ -223,7 +223,7 @@ def login_password(identifier: str, password: str, debug: bool = False) -> dict[
     response = requests.post(url, headers=headers, json=data)
 
     if response.status_code != 200:
-        s = " [bold red]Failed to login to your Duolingo account. Make sure you're using the correct credentials and that you can login using a password.[/]"
+        s = " [bold red]Failed to log in to your Duolingo account. Make sure you're using the correct credentials and that you can log in using a password.[/]"
         if debug:
             s += (
                 f"\n[bold magenta][DEBUG][/] Status code {response.status_code}\n"
