@@ -231,9 +231,9 @@ def login_password(identifier: str, password: str, debug: bool = False) -> dict[
             )
         return s
 
-    username = response.json().get("username", "Unknown")
-    user_id = response.json().get("id")
-
+    data = response.json()
+    username = data.get("username", "Unknown")
+    user_id = data.get("id")
     try:
         jwt_token = response.cookies.get('jwt_token')
     except requests.cookies.CookieConflictError:
