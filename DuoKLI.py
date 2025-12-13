@@ -4,7 +4,7 @@ from rich import print
 from datetime import datetime, timedelta
 from tzlocal import get_localzone
 from utils import (getch, fint, inp, current_time, time_taken, get_headers, get_duo_info, clear,
-                   fetch_username_and_id, farm_progress, warn_request_count, ratelimited_warning)
+                   fetch_username_and_id, farm_progress, warn_request_count, ratelimited_warning, login_password)
 
 # TODO: Port some functions from [my private project] to here
 # TODO: Add questsaver function to the saver script
@@ -512,12 +512,13 @@ try:
                             f"\n  [bright_magenta]Accounts:[/]",
                             *[f"  {i+1}: {acc['username']}" for i, acc in enumerate(config['accounts'])],
                             f"\n  [bright_green]A. Add Account[/]",
+                            f"  [bright_green]L. Login with Password[/]",
                             f"  [bright_yellow]Select an account to edit it.[/]",
                             f"\n  [bright_red]0. Go Back[/]\n"
                         ]
                         for string in acc_manager_menu:
                             print(string)
-                        while acc_manager_option not in [*[str(i) for i in range(len(config['accounts']) + 1)], "A"]:
+                        while acc_manager_option not in [*[str(i) for i in range(len(config['accounts']) + 1)], "A", "L"]:
                             acc_manager_option = getch().upper()
                         clear()
                         for i, s in enumerate(acc_manager_menu):
@@ -592,6 +593,43 @@ try:
                             print(f" [bright_green]Successfully added account {new_account['username']}![/]")
                             print(" [bright_yellow]Press any key to continue.[/]")
                             getch()
+                        elif acc_manager_option == "L":
+                            try:
+                                identifier = inp(" Enter your account identifier (email, username or phone number)")
+                            except ValueError:
+                                continue
+                            if not identifier:
+                                continue
+
+                            try:
+                                password = inp(" Enter your password", password=True)
+                            except ValueError:
+                                continue
+                            if not password:
+                                continue
+
+                            print(" [bright_yellow]Logging in, please wait...[/]", end='\r')
+                            new_account = login_password(identifier, password, DEBUG)
+                            _print("\033[2K", end="")
+                            if isinstance(new_account, str):
+                                print(new_account)
+                                print(" [bright_yellow]Press any key to continue.[/]")
+                                getch()
+                                continue
+                            config['accounts'].append({
+                                "username": new_account['username'],
+                                "id": new_account['id'],
+                                "token": new_account['token'],
+                                "autostreak": False,
+                                "autoleague": {
+                                    "active": False,
+                                    "position": None
+                                }
+                            })
+                            print(f" [bright_green]Successfully added account {new_account['username']}![/]")
+                            print(" [bright_yellow]Press any key to continue.[/]")
+                            getch()
+                            
                     break
                 elif account == 0:
                     print("\n  [bright_red]Exiting program...[/]")
