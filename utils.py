@@ -22,7 +22,7 @@ with open("config.json", "r") as f:
 def clear():
     os.system('cls' if os.name == 'nt' else 'clear')
 
-def current_time():
+def current_time() -> str:
     return f"[bold bright_black]{datetime.now():%Y-%m-%d %H:%M:%S}[/]"
 
 def time_taken(t: int | float) -> str:
@@ -31,7 +31,10 @@ def time_taken(t: int | float) -> str:
     m, s = divmod(r, 60)
     return f"{d:02}:{h:02}:{m:02}:{s:02}" if d else f"{h:02}:{m:02}:{s:02}"
 
-def getch():
+def fint(n: int | float) -> str:
+    return f"{n:,}" if n != 0 else "inf"
+
+def getch() -> str:
     if os.name == "nt":
         ch = msvcrt.getch().decode("utf-8")
     else:
@@ -64,18 +67,19 @@ def inp(s) -> str:
             _print(c, end="", flush=True)
             r += c
 
-def farm_progress(type: str, color: str): 
+def farm_progress(type: str, color: str, is_endless: bool = False) -> Progress:
     return Progress(
-        TextColumn(" ["+color+"]Farming {task.completed:,}/{task.total:,} "+type+"...[/]"),
+        TextColumn(" ["+color+"]Farming {task.completed:,}/inf "+type+"...[/]") if is_endless \
+            else TextColumn(" ["+color+"]Farming {task.completed:,}/{task.total:,} "+type+"...[/]"),
         *Progress.get_default_columns()[1:3],
-        TextColumn("[cyan]ETA:"),
-        TimeRemainingColumn(),
+        TextColumn("[cyan]ETA:") if not is_endless else "\033[D",
+        TimeRemainingColumn() if not is_endless else "\033[D",
         TextColumn("[yellow]Elapsed:"),
         TimeElapsedColumn(),
         "\033[D"
     )
 
-def get_headers(account: int = None, token: str = None, user_id: int = None):
+def get_headers(account: int = None, token: str = None, user_id: int = None) -> dict[str, str]:
     if account != None:
         token = config['accounts'][account]['token']
         user_id = config['accounts'][account]['id']
@@ -120,6 +124,32 @@ def randomize_mobile_user_agent() -> str:
     user_agent = f"Duodroid/{duolingo_version} Dalvik/2.1.0 (Linux; U; Android {android_version}; {device} Build/{build_code}.{build_date}.{build_suffix})"
     return user_agent
 
+def warn_request_count(requests_needed: int, threshold: int = 200) -> bool:
+    if requests_needed < threshold and requests_needed != 0:
+        return True
+    try:
+        if requests_needed == 0:
+            print(f"\n [yellow]⚠️ Warning: This will endlessly send requests to Duolingo's servers![/]")
+        else:
+            print(f"\n [yellow]⚠️ Warning: This will send {requests_needed:,} requests to Duolingo's servers![/]")
+        print(" [yellow]   This may result in your account being rate-limited for some time.[/]")
+        print(f" [bright_black]   (you're seeing this as you're about to send +{threshold} requests, that's +{threshold * 30:,} gems!)[/] \n")
+        print(" [yellow]   Press any key to continue or Ctrl+C to cancel.[/]")
+        if getch() == "\x03":
+            return False
+    except KeyboardInterrupt:
+        return False
+    return True
+
+def ratelimited_warning():
+    try:
+        print(" [yellow]⚠️ You have been rate-limited by Duolingo![/]")
+        print(" [yellow]   You will not be able to farm for several minutes.[/]\n")
+        print(" [yellow]   Press any key to cancel.[/]")
+        getch()
+    except KeyboardInterrupt:
+        pass
+
 def get_duo_info(account: int, debug: bool = False):
     url = f"https://www.duolingo.com/2017-06-30/users/{config['accounts'][account]['id']}"
     headers = get_headers(account)
@@ -133,10 +163,7 @@ def get_duo_info(account: int, debug: bool = False):
         if debug:
             print(f"{current_time()} [bold magenta][DEBUG][/] Rate limited when retrieving Duolingo info for user {config['accounts'][account]['username']}")
         
-        print(" [yellow]⚠️  You have been rate limited by Duo[/]")
-        print(" [yellow]   You will not be able to use DuoKLI or Duolingo for some minutes.[/]\n")
-        print(" [yellow]   Press any key to cancel.[/]")
-        ch = getch()
+        ratelimited_warning()
 
         return None
     else:
@@ -148,7 +175,7 @@ def get_duo_info(account: int, debug: bool = False):
             )
         return None
 
-def fetch_username_and_id(token: str, debug: bool = False):
+def fetch_username_and_id(token: str, debug: bool = False) -> dict[str, int | str]:
     token = token.strip().replace(" ", "").replace("'", "").replace("\"", "")
 
     if not re.match(r'^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+$', token):

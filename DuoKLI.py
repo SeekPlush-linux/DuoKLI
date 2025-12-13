@@ -1,12 +1,11 @@
-import requests, pytz, sys, os, json, traceback, time
+import requests, pytz, sys, os, json, traceback, time, concurrent.futures, threading
 _print = print
 from rich import print
 from datetime import datetime, timedelta
 from tzlocal import get_localzone
-from utils import getch, inp, current_time, time_taken, get_headers, get_duo_info, clear, fetch_username_and_id, farm_progress
-import concurrent.futures
+from utils import (getch, fint, inp, current_time, time_taken, get_headers, get_duo_info, clear,
+                   fetch_username_and_id, farm_progress, warn_request_count, ratelimited_warning)
 
-# TODO: Add endless farming
 # TODO: Port some functions from [my private project] to here
 # TODO: Add questsaver function to the saver script
 # TODO: Implement multi-threading and proxies
@@ -16,29 +15,40 @@ import concurrent.futures
 # TODO: Add Verbose Mode in addition to Debug Mode
 # TODO: Fix DuoKLI crashing when trying to farm on the newly added account right after adding it
 # TODO: Implement "Check for updates" setting that will check the GitHub repo for updates, automatically update DuoKLI if an update is found
+# TODO: Write debug info into a log file
 
-VERSION = "v1.1.2"
+VERSION = "v1.2.0"
 TIMEZONE = str(get_localzone())
 
 with open("config.json", "r") as f:
     config: dict = json.load(f)
 
 DEBUG = config['debug']
-def title_string():
+def title_string() -> str:
     return f'\n   [bold][bright_green]Duo[/][bright_blue]KLI[/] [white]{VERSION}[/]{" [magenta][Debug Mode Enabled][/]" if DEBUG else ""}[/]'
 
-def start_task(type: str, account: int, request_amount: bool = True):
+def start_task(type: str, account: int, request_amount: bool = True) -> bool:
     if request_amount:
         try:
             amount = int(inp(f" Enter amount of {type}"))
         except ValueError:
-            return
+            return False
+
+    if type.lower() in ['gems', 'fast gems']:
+        if amount == 0:
+            if not warn_request_count(0):
+                return False
+        else:
+            per_request = 30
+            requests_needed = (amount + per_request - 1) // per_request
+            if not warn_request_count(requests_needed):
+                return False
 
     if type == "Super Duolingo":
         print(" [bright_yellow]Activating 3 days of Super Duolingo...[/]", end="")
     else:
         print("\n  [bright_yellow]Press Ctrl+C to stop farming.[/]\n")
-        print(f" [blue]Starting to farm {amount:,} {type}...[/]", end="")
+        print(f" [blue]Starting to farm {fint(amount)} {type}...[/]", end="")
     _print("\r", end="")
 
     if type.lower() == "xp":
@@ -52,7 +62,7 @@ def start_task(type: str, account: int, request_amount: bool = True):
     elif type.lower() == "super duolingo":
         farm = activate_super(account)
 
-    if farm and type.lower() in ["xp", "gems", "streak days", "fast gems"]:
+    if farm and type.lower() in ["xp", "gems", "fast gems", "streak days"]:
         print(
             f"\n [green]✅ Successfully farmed {farm['total']:,} {type}![/]\n"
             f" [blue]🕒 Time Taken: {time_taken(farm['end'] - farm['start'])}[/]"
@@ -61,20 +71,21 @@ def start_task(type: str, account: int, request_amount: bool = True):
     _print("\033[?25l", end="")
     print("\n [bright_yellow]Press any key to continue.[/]")
     getch()
+    return True
 
 def xp_farm(amount, account):
-    if amount <= 0:
-        print(" [red]Cannot farm 0 or negative XP![/]")
+    if amount < 0:
+        print(" [red]Cannot farm negative XP![/]")
         return
 
     url = f'https://stories.duolingo.com/api2/stories/fr-en-le-passeport/complete'
     headers = get_headers(account)
 
     total_xp = 0
-    xp_left = amount
+    xp_left = amount if amount else sys.maxsize
 
-    with farm_progress("XP", "yellow") as prog:
-        task = prog.add_task("", total=amount)
+    with farm_progress("XP", "yellow", amount == 0) as prog:
+        task = prog.add_task("", total=amount if amount else None)
         start = time.monotonic()
         while True:
             try:
@@ -106,7 +117,7 @@ def xp_farm(amount, account):
                     prog.update(task, completed=total_xp)
                     xp_left -= result.get('awardedXp', 0)
                 else:
-                    print(f" [red]Failed to farm {499 if xp_left >= 499 else xp_left} XP ({total_xp:,}/{amount:,} XP)[/]")
+                    print(f" [red]Failed to farm {499 if xp_left >= 499 else xp_left} XP ({total_xp:,}/{fint(amount)} XP)[/]")
                 if DEBUG:
                     print(
                         f"{current_time()} [bold magenta][DEBUG][/] Status code {response.status_code}\n"
@@ -117,94 +128,14 @@ def xp_farm(amount, account):
             except KeyboardInterrupt:
                 break
             except Exception as e:
-                print(f" [bold red]An error occurred ({total_xp:,}/{amount:,} XP): {e}[/]")
+                print(f" [bold red]An error occurred ({total_xp:,}/{fint(amount)} XP): {e}[/]")
 
     end = time.monotonic()
     return {'total': total_xp, 'start': start, 'end': end}
 
-def warn_request_count(requests_needed: int, treshold=200) -> bool:
-    if requests_needed < treshold:
-        return True
-    try:
-        print(f" [yellow]⚠️  Warning: This will send {requests_needed:,} requests to Duolingo's servers![/]")
-        print(" [yellow]   This may result in your account being rate limited.[/]")
-        print(" [bright_black]   (you're seeing this as you're about to send +200 requests (that's 6,000 gems!)[/] \n")
-        print(" [yellow]   Press any key to continue or Ctrl+C to cancel.[/]")
-        ch = getch()
-        if ch == "\x03":
-            print(" [red]   Aborted.[/]")
-            return False
-    except KeyboardInterrupt:
-        return False
-    return True
-
-# im adding this as theres no proxy support yet
-# also im printing this on utils.py too
-def ratelimited_warning() -> bool:
-    try:
-        print(" [yellow]⚠️  You have been rate limited by Duo[/]")
-        print(" [yellow]   You will not be able to use DuoKLI or Duolingo for some minutes.[/]\n")
-        print(" [yellow]   Press any key to cancel.[/]")
-        ch = getch()
-    except KeyboardInterrupt:
-        return False
-    return False
-
 def gem_farm(amount, account):
-    if amount <= 0:
-        print(" [red]Cannot farm 0 or negative gems![/]")
-        return
-
-    headers = get_headers(account)
-    duo_info = get_duo_info(account, DEBUG)
-    fromLanguage = duo_info.get('fromLanguage', 'Unknown')
-    learningLanguage = duo_info.get('learningLanguage', 'Unknown')
-
-    total_gems = 0
-    gems_left = amount
-
-    per_request = 30
-    requests_needed = (amount + per_request - 1) // per_request
-    if not warn_request_count(requests_needed):
-        return
-
-    with farm_progress("gems", "cyan") as prog:
-        task = prog.add_task("", total=amount)
-        start = time.monotonic()
-        while True:
-            try:
-                url = f"https://www.duolingo.com/2017-06-30/users/{config['accounts'][account]['id']}/rewards/SKILL_COMPLETION_BALANCED-…-2-GEMS"
-                payload = {"consumed": True, "fromLanguage": fromLanguage, "learningLanguage": learningLanguage}
-
-                response = requests.patch(url, headers=headers, json=payload, timeout=10)
-
-                if response.status_code == 200:
-                    total_gems += 30
-                    prog.update(task, completed=total_gems)
-                    gems_left -= 30
-                elif response.status_code == 403:
-                        ratelimited_warning()
-                        return
-                else:
-                    print(f" [red]Failed to farm 30 gems ({total_gems:,}/{amount:,} gems)[/]")
-                if DEBUG:
-                    print(
-                        f"{current_time()} [bold magenta][DEBUG][/] Status code {response.status_code}\n"
-                        f"{current_time()} [bold magenta][DEBUG][/] Content: {response.text}\n"
-                    )
-                if gems_left <= 0:
-                    break
-            except KeyboardInterrupt:
-                break
-            except Exception as e:
-                print(f" [bold red]An error occurred ({total_gems:,}/{amount:,} gems): {e}[/]")
-
-    end = time.monotonic()
-    return {'total': total_gems, 'start': start, 'end': end}
-
-def fast_gem_farm(amount, account):
-    if amount <= 0:
-        print(" [red]Cannot farm 0 or negative gems![/]")
+    if amount < 0:
+        print(" [red]Cannot farm negative gems![/]")
         return
 
     headers = get_headers(account)
@@ -215,50 +146,115 @@ def fast_gem_farm(amount, account):
     per_request = 30
     requests_needed = (amount + per_request - 1) // per_request
     expected_total = requests_needed * per_request
+    total_gems = 0
+    gems_left = expected_total if amount else sys.maxsize
 
+    with farm_progress("gems", "cyan", amount == 0) as prog:
+        task = prog.add_task("", total=expected_total if amount else None)
+        start = time.monotonic()
+        while True:
+            try:
+                url = f"https://www.duolingo.com/2017-06-30/users/{config['accounts'][account]['id']}/rewards/SKILL_COMPLETION_BALANCED-…-2-GEMS"
+                payload = {"consumed": True, "fromLanguage": fromLanguage, "learningLanguage": learningLanguage}
+
+                response = requests.patch(url, headers=headers, json=payload, timeout=10)
+
+                if response.status_code == 200:
+                    total_gems += per_request
+                    prog.update(task, completed=total_gems)
+                    gems_left -= per_request
+                elif response.status_code == 403:
+                    ratelimited_warning()
+                    return
+                else:
+                    print(f" [red]Failed to farm {per_request} gems ({total_gems:,}/{fint(expected_total)} gems)[/]")
+                if DEBUG:
+                    print(
+                        f"{current_time()} [bold magenta][DEBUG][/] Status code {response.status_code}\n"
+                        f"{current_time()} [bold magenta][DEBUG][/] Content: {response.text}\n"
+                    )
+                if gems_left <= 0:
+                    break
+            except KeyboardInterrupt:
+                break
+            except Exception as e:
+                print(f" [bold red]An error occurred ({total_gems:,}/{fint(expected_total)} gems): {e}[/]")
+
+    end = time.monotonic()
+    return {'total': total_gems, 'start': start, 'end': end}
+
+def fast_gem_farm(amount, account):
+    if amount < 0:
+        print(" [red]Cannot farm negative gems![/]")
+        return
+
+    headers = get_headers(account)
+    duo_info = get_duo_info(account, DEBUG)
+    fromLanguage = duo_info.get('fromLanguage', 'Unknown')
+    learningLanguage = duo_info.get('learningLanguage', 'Unknown')
+
+    per_request = 30
+    requests_needed = (amount + per_request - 1) // per_request
+    expected_total = requests_needed * per_request
     total_gems = 0
 
-    if not warn_request_count(requests_needed):
-        return
-        
-    with farm_progress("gems", "cyan") as prog:
-        task = prog.add_task("", total=amount)
+    stop_event = threading.Event()
+
+    with farm_progress("gems", "cyan", amount == 0) as prog:
+        task = prog.add_task("", total=expected_total if amount else None)
         start = time.monotonic()
+        url = f"https://www.duolingo.com/2017-06-30/users/{config['accounts'][account]['id']}/rewards/SKILL_COMPLETION_BALANCED-…-2-GEMS"
+        payload = {"consumed": True, "fromLanguage": fromLanguage, "learningLanguage": learningLanguage}
+
+        def do_patch():
+            if stop_event.is_set():
+                return None, "stopped"
+            try:
+                resp = requests.patch(url, headers=headers, json=payload, timeout=10)
+                return resp.status_code, getattr(resp, 'text', '')
+            except Exception as ex:
+                return None, str(ex)
+
+        max_workers = min(20, requests_needed) if requests_needed > 0 else 1 if amount else 20
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+        futures = []
         try:
-            url = f"https://www.duolingo.com/2017-06-30/users/{config['accounts'][account]['id']}/rewards/SKILL_COMPLETION_BALANCED-…-2-GEMS"
-            payload = {"consumed": True, "fromLanguage": fromLanguage, "learningLanguage": learningLanguage}
-
-            def do_patch():
-                try:
-                    resp = requests.patch(url, headers=headers, json=payload, timeout=10)
-                    return resp.status_code, getattr(resp, 'text', '')
-                except Exception as ex:
-                    return None, str(ex)
-
-            max_workers = min(20, requests_needed) if requests_needed > 0 else 1
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
-                futures = [ex.submit(do_patch) for _ in range(requests_needed)]
+            while not stop_event.is_set():
+                futures = [executor.submit(do_patch) for _ in range(requests_needed if amount else 1000)]
                 for fut in concurrent.futures.as_completed(futures):
+                    if stop_event.is_set():
+                        break
                     try:
                         status, content = fut.result()
-                    except KeyboardInterrupt:
-                        raise
                     except Exception as e:
                         status, content = None, str(e)
                     if status == 200:
                         total_gems += per_request
-                        prog.update(task, completed=total_gems if total_gems <= expected_total else expected_total)
+                        prog.update(task, completed=total_gems)
                     elif status == 403:
                         ratelimited_warning()
+                        stop_event.set()
                         return
                     else:
-                        print(f" [red]Failed to farm 30 gems ({total_gems:,}/{amount:,} gems)[/]")
+                        print(f" [red]Failed to farm {per_request} gems ({total_gems:,}/{fint(expected_total)} gems)[/]")
                     if DEBUG:
-                        print(f"{current_time()} [bold magenta][DEBUG][/] Status code {status}\n{current_time()} [bold magenta][DEBUG][/] Content: {content}\n")
+                        print(
+                            f"{current_time()} [bold magenta][DEBUG][/] Status code {status}\n"
+                            f"{current_time()} [bold magenta][DEBUG][/] Content: {content}\n"
+                        )
+                if amount:
+                    break
         except KeyboardInterrupt:
-            pass
+            stop_event.set()
+            for fut in futures:
+                fut.cancel()
         except Exception as e:
-            print(f" [bold red]An error occurred ({total_gems:,}/{amount:,} gems): {e}[/]")
+            print(f" [bold red]An error occurred ({total_gems:,}/{fint(expected_total)} gems): {e}[/]")
+        finally:
+            try:
+                executor.shutdown(wait=False)
+            except Exception:
+                pass
 
     end = time.monotonic()
     return {'total': total_gems, 'start': start, 'end': end}
@@ -285,8 +281,9 @@ def streak_farm(amount, account):
             print(" [yellow]You have already reached the maximum amount of streak days possible![/]")
             return
 
-    with farm_progress("streak days", "sandy_brown") as prog:
-        task = prog.add_task("", total=amount)
+    with farm_progress("streak days", "sandy_brown", amount == 0) as prog:
+        task = prog.add_task("", total=amount if amount else None)
+        amount = amount if amount else sys.maxsize
         start = time.monotonic()
         while True:
             try:
@@ -341,7 +338,7 @@ def streak_farm(amount, account):
                     if DEBUG:
                         print(f"{current_time()} [bold magenta][DEBUG][/] Session created")
                 else:
-                    print(f" [red]Failed to create a session ({day_count:,}/{amount:,} days)[/]")
+                    print(f" [red]Failed to create a session ({day_count:,}/{fint(amount)} days)[/]")
                     if DEBUG:
                         print(
                             f"{current_time()} [bold magenta][DEBUG][/] Status code {response.status_code}\n"
@@ -349,7 +346,7 @@ def streak_farm(amount, account):
                         )
                     continue
                 if 'id' not in session_data:
-                    print(f" [red]Session ID not found in response data ({day_count:,}/{amount:,} days)[/]")
+                    print(f" [red]Session ID not found in response data ({day_count:,}/{fint(amount)} days)[/]")
                     if DEBUG:
                         print(
                             f"{current_time()} [bold magenta][DEBUG][/] Status code {response.status_code}\n"
@@ -384,7 +381,7 @@ def streak_farm(amount, account):
                     if DEBUG:
                         print(f"{current_time()} [bold magenta][DEBUG][/] Session updated")
                 else:
-                    print(f" [red]Failed to extend streak ({day_count:,}/{amount:,} days)[/]")
+                    print(f" [red]Failed to extend streak ({day_count:,}/{fint(amount)} days)[/]")
                 if DEBUG:
                     print(
                         f"{current_time()} [bold magenta][DEBUG][/] Status code {response.status_code}\n"
@@ -396,7 +393,7 @@ def streak_farm(amount, account):
             except KeyboardInterrupt:
                 break
             except Exception as e:
-                print(f" [bold red]An error occurred ({day_count:,}/{amount:,} gems): {e}[/]")
+                print(f" [bold red]An error occurred ({day_count:,}/{fint(amount)} days): {e}[/]")
 
     end = time.monotonic()
     return {'total': day_count-1, 'start': start, 'end': end}
@@ -565,7 +562,7 @@ try:
                                     config['accounts'][acc_to_update], config['accounts'][acc_to_update-1] = config['accounts'][acc_to_update-1], config['accounts'][acc_to_update]
                             elif acc_manager_option == "R":
                                 print(f"\n [bright_red]Are you sure you want to remove {config['accounts'][acc_to_update]['username']}? \\[y/N][/]")
-                                if getch().upper() == "Y":
+                                if getch().upper() in ["Y", "\r"]:
                                     config['accounts'].pop(acc_to_update)
                         elif acc_manager_option == "A":
                             try:
@@ -576,7 +573,6 @@ try:
                                 continue
                             print(" [bright_yellow]Adding your account, please wait...[/]", end='\r')
                             new_account = fetch_username_and_id(new_token, DEBUG)
-                            # new_account = {"username": config['accounts'][1]['username'], "id": config['accounts'][1]['id']}
                             _print("\033[2K", end="")
                             if isinstance(new_account, str):
                                 print(new_account)
@@ -619,7 +615,7 @@ try:
             "  [sandy_brown]3. Streak[/]",
             "  [medium_purple1]4. Super Duolingo[/]",
             "  [pink1]5. Items Menu[/]",
-            "  [bright_green]6. Saver[/]",
+            "  [bright_green]6. Saver[/]\n",
             "  [bright_blue]9. Settings[/]",
             "  [bright_red]0. Quit[/]\n",
         ]
@@ -634,36 +630,32 @@ try:
         if option == "1":
             start_task("XP", account)
         elif option == "2":
-            #start_task("gems", account)
             while True:
-                items = {
-                    "1": ("gems", "Gems"),
-                    "2": ("fast gems", "Fast gems"),
+                methods = {
+                    "1": "gems",
+                    "2": "fast gems",
                 }
-                items_option = ""
+                methods_option = ""
                 clear()
-                items_menu = [
+                methods_menu = [
                     title_string(),
-                    "\n  [bold bright_blue]Choose a farm method:[/]",
+                    "\n  [bold bright_blue]Choose a gem farm method:[/]",
                     "  [bright_cyan]1. Gems[/]",
-                    "  [sandy_brown]2. Fast Gems[/]",
+                    "  [bright_yellow]2. Fast Gems[/]\n",
                     "  [bright_red]0. Go Back[/]\n",
                 ]
-                for string in items_menu:
+                for string in methods_menu:
                     print(string)
-                while items_option not in ['1', '2', '0']:
-                    items_option = getch().upper()
+                while methods_option not in ['1', '2', '0']:
+                    methods_option = getch().upper()
                 clear()
-                for string in items_menu:
-                    print(string if items_menu.index(string) < 2 else f"[bold]{string}[/]" if f"{items_option.upper()}. " in string else f"  [bright_black]{string.split("]", maxsplit=1)[1]}")
-                if items_option in ['1', '2']:
-                    print(f" [bright_yellow]Giving \"{items[items_option][1]}\"...[/]", end="")
-                    _print("\r", end="")
-                    #give_item(account, items[items_option])
-                    start_task(items[items_option][0], account)
-                    #print(" [bright_yellow]Press any key to continue.[/]")
-                    #getch()
-                elif items_option == "0":
+                for string in methods_menu:
+                    print(string if methods_menu.index(string) < 2 else f"[bold]{string}[/]" if f"{methods_option.upper()}. " in string else f"  [bright_black]{string.split("]", maxsplit=1)[1]}")
+                if methods_option in ['1', '2']:
+                    success = start_task(methods[methods_option], account)
+                    if success:
+                        break
+                elif methods_option == "0":
                     break
         elif option == "3":
             start_task("streak days", account)
@@ -701,7 +693,7 @@ try:
                     "  [bright_yellow]9. XP Boost x3 15 Mins[/]",
                     "  [bright_yellow]Q. Early Bird XP Boost[/]",
                     "  [bright_magenta]W. Row Blaster 150[/]",
-                    "  [bright_magenta]E. Row Blaster 250[/]",
+                    "  [bright_magenta]E. Row Blaster 250[/]\n",
                     "  [bright_red]0. Go Back[/]\n",
                 ]
                 for string in items_menu:
