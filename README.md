@@ -9,6 +9,7 @@ Ensure you have the following programs installed:
 - Python (`py` for Windows, `python3` for Linux/MacOS)
 
 ## Installation
+### Method 1: ZIP Download
 1. Go to the [Releases](https://github.com/SeekPlush-linux/DuoKLI/releases) page and download the zip file from the latest release.
 
 2. Extract the zip file and open a terminal in the extracted folder.
@@ -22,6 +23,21 @@ Ensure you have the following programs installed:
    ```
    py DuoKLI.py
    ```
+  
+### Method 2: Automatic download (currently on BETA)
+This installation script allows running DuoKLI by executing this in your terminal:
+```
+$ duokli
+```
+When using it, it will install DuoKLI in your current directory.
+
+```
+curl -fsSL https://raw.githubusercontent.com/SeekPlush-linux/DuoKLI/refs/heads/main/Installation/install.sh | bash -s -- --github-repo SeekPlush-linux/DuoKLI
+```
+#### Tested on:
+- [x] Linux (debian 13)
+- [x] macOS (Tahoe 26.2)
+- [ ] ~~Windows~~
 
 ## Usage
 - To navigate around the CLI, press the corresponding key on your keyboard that's next to the option you want to select.
