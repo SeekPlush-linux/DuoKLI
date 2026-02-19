@@ -2,20 +2,20 @@
 set -euo pipefail
 
 GITHUB_REPO=""
-DEFAULT_PREFIX="/usr/local/lib/duokli"
+DEFAULT_LOCATION="/usr/local/lib/duokli"
 DOWNLOAD_DIR=""
 BIN_DIR="/usr/local/bin"
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [--prefix DIR] [--tag TAG] [--uninstall] --github-repo owner/repo
+Usage: $(basename "$0") [--location DIR] [--tag TAG] [--uninstall] --github-repo owner/repo
 
 Options:
-  --prefix DIR         Install prefix (default: ${DEFAULT_PREFIX})
+  --location DIR       Install to custom location (default: ${DEFAULT_LOCATION})
   --github-repo REPO   GitHub repo in owner/repo format (required)
   --download-dir DIR   Temp download directory (default: current dir)
   --tag TAG            Specific release tag instead of latest
-  --uninstall          Remove the wrapper and symlink
+  --uninstall          Uninstall DuoKLI
   -h, --help           Show this help
 EOF
 }
@@ -34,6 +34,10 @@ check_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing: $1"
 }
 
+cleanup() {
+  [[ -e "${ARCHIVE}" ]] && sudo rm -f "${ARCHIVE}" || true
+}
+
 OS_NAME=$(uname -s 2>/dev/null || echo unknown)
 case "${OS_NAME}" in
   Linux|Darwin) :;;
@@ -45,14 +49,14 @@ check_cmd curl
 check_cmd tar
 check_cmd python3
 
-PREFIX="${DEFAULT_PREFIX}"
+LOCATION="${DEFAULT_LOCATION}"
 TAG=""
 UNINSTALL=0
 
 while [[ ${#} -gt 0 ]]; do
   case "$1" in
-    --prefix)
-      PREFIX="$2"; shift 2;;
+    --location)
+      LOCATION="$2"; shift 2;;
     --github-repo)
       GITHUB_REPO="$2"; shift 2;;
     --download-dir)
@@ -71,14 +75,25 @@ done
 BIN_PATH="${BIN_DIR}/duokli"
 
 if [[ ${UNINSTALL} -eq 1 ]]; then
-  info "Uninstalling"
-  [[ -L "${PREFIX}" ]] && sudo rm -f "${PREFIX}" && note "Removed symlink ${PREFIX}"
-  [[ -f "${BIN_PATH}" ]] && sudo rm -f "${BIN_PATH}" && note "Removed wrapper ${BIN_PATH}"
-  note "Existing releases under ${PREFIX}-<tag> remain"
-  exit 0
+  read -rp "Are you sure you want to uninstall DuoKLI? This operation will also delete your config permanently! [y/N]: " CONFIRM
+  if [[ "${CONFIRM}" = "y" ]]; then
+    info "Uninstalling"
+    [[ -f "${BIN_PATH}" ]] && sudo rm -f "${BIN_PATH}" && note "Removed wrapper ${BIN_PATH}"
+    [[ -d "${LOCATION}" ]] && sudo rm -rf "${LOCATION}" && note "Removed DuoKLI ${LOCATION}"
+    info "Done"
+    exit 0
+  fi
+  exit 1
 fi
 
 [[ -z "${GITHUB_REPO}" ]] && die "--github-repo owner/repo required"
+
+if [[ -d "${LOCATION}" ]]; then
+  read -rp "You have an existing installation of DuoKLI on your device, continuing will permanently delete it and install a fresh copy of DuoKLI. Would you like to continue? [y/N]: " CONFIRM
+  if [[ "${CONFIRM}" != "y" ]]; then
+    exit 1
+  fi
+fi
 
 API_URL="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
 
@@ -100,35 +115,32 @@ else
 fi
 ARCHIVE="${TMPDIR}/repo-${TAG}.tar.gz"
 
+trap cleanup EXIT
+
 info "Downloading ${TAG}"
 curl -sSL --fail -o "${ARCHIVE}" "${TARBALL_URL}" || die "download failed"
 
 info "Extracting"
 tar -xzf "${ARCHIVE}" -C "${TMPDIR}" || die "extract failed"
 
-EXTRACTED_DIR=$(find "${TMPDIR}" -mindepth 1 -maxdepth 1 -type d | head -n1)
+EXTRACTED_DIR=$(find "${TMPDIR}" -mindepth 1 -maxdepth 1 -type d | grep -F "DuoKLI-")
 [[ -d "${EXTRACTED_DIR}" ]] || die "extracted directory not found"
 
-TARGET_DIR="${PREFIX}-${TAG}"
+info "Installing to ${LOCATION}"
+[[ -e "${LOCATION}" ]] && sudo rm -rf "${LOCATION}"
 
-info "Installing to ${TARGET_DIR}"
-[[ -e "${TARGET_DIR}" ]] && sudo rm -rf "${TARGET_DIR}"
-
-sudo mkdir -p "$(dirname "${TARGET_DIR}")"
-sudo mv "${EXTRACTED_DIR}" "${TARGET_DIR}" || die "failed to move files into ${TARGET_DIR}"
-
-info "Linking"
-sudo ln -sfn "${TARGET_DIR}" "${PREFIX}"
+sudo mkdir -p "$(dirname "${LOCATION}")"
+sudo mv "${EXTRACTED_DIR}" "${LOCATION}" || die "failed to move files into ${LOCATION}"
 
 info "Setting up venv"
-sudo "${TARGET_DIR}"/bin/true 2>/dev/null || true
-sudo chown -R "$(whoami)" "${TARGET_DIR}"
-python3 -m venv "${TARGET_DIR}/venv" || die "venv creation failed"
-"${TARGET_DIR}/venv/bin/pip" install -q -U pip setuptools wheel
+sudo "${LOCATION}"/bin/true 2>/dev/null || true
+sudo chown -R "$(whoami)" "${LOCATION}"
+python3 -m venv "${LOCATION}/venv" || die "venv creation failed"
+"${LOCATION}/venv/bin/pip" install -q -U pip setuptools wheel
 
-if [[ -f "${TARGET_DIR}/requirements.txt" ]]; then
+if [[ -f "${LOCATION}/requirements.txt" ]]; then
   info "Installing dependencies"
-  "${TARGET_DIR}/venv/bin/pip" install -q -r "${TARGET_DIR}/requirements.txt"
+  "${LOCATION}/venv/bin/pip" install -q -r "${LOCATION}/requirements.txt"
 else
   note "No requirements.txt"
 fi
@@ -136,7 +148,8 @@ fi
 info "Creating wrapper ${BIN_PATH}"
 WRAPPER_CONTENT=$(cat <<EOF
 #!/usr/bin/env bash
-exec "${TARGET_DIR}/venv/bin/python" "${PREFIX}/DuoKLI.py" "\$@"
+cd "${LOCATION}"
+exec "${LOCATION}/venv/bin/python" "${LOCATION}/DuoKLI.py" "\$@"
 EOF
 )
 echo "${WRAPPER_CONTENT}" | sudo tee "${BIN_PATH}" >/dev/null
@@ -145,5 +158,5 @@ sudo chmod +x "${BIN_PATH}"
 info "Done"
 note "Launch with: duokli"
 note "Wrapper at ${BIN_PATH}"
-note "Prefix at ${PREFIX}"
+note "DuoKLI at ${LOCATION}"
 exit 0

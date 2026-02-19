@@ -2,10 +2,11 @@ import sys, os, requests, zipfile, tempfile, shutil
 import re
 import json
 from pathlib import Path
+from rich import print as richprint
+from utils import getch
 import version
 
 APP_DIR = Path.cwd()
-
 UPDATE_DIR = version.UPDATE_DIR
 
 def apply_update(staged_dir: Path, target_dir: Path = APP_DIR):
@@ -81,7 +82,7 @@ def stage_update(extract_dir: Path, tag: str):
 def check_and_stage_update(apply: bool = False, printing: bool = True, ask: bool = False, cfg: dict = None, debug: bool = False, autoupdating: bool = False):
     def print(*args, **kwargs):
         if printing:
-            __builtins__.print(*args, **kwargs)
+            richprint(*args, **kwargs)
     try:
         release = get_latest_release()
         latest = release["tag_name"]
@@ -91,13 +92,13 @@ def check_and_stage_update(apply: bool = False, printing: bool = True, ask: bool
         
         if is_newer(latest):
             if autoupdating and latest in skip_versions:
-                print(f"Skipping version {latest} (marked to skip in config).")
+                print(f"  [bright_blue]Skipping version {latest} (marked to skip in config).[/]")
                 return
 
             response = "y"
             if ask:
-                response = input(f"A new version {latest} is available. Do you want to update now? (y/n/(s)kip): ").strip().lower()
-            if response.startswith("s"):
+                response = getch(f"  [bright_green]A new version ({latest}) is available. Do you want to update now?[/] [bold white]\[y/n/(s)kip]:[/] ", show_input=True).lower()
+            if response == "s":
                 target_cfg = cfg
                 if target_cfg is None:
                     try:
@@ -115,36 +116,36 @@ def check_and_stage_update(apply: bool = False, printing: bool = True, ask: bool
                                 json.dump(target_cfg, f, indent=4)
                         except Exception:
                             pass
-                print(f"Skipped version {latest}.")
+                print(f"  [bright_yellow]Skipped version {latest}.[/]")
                 return
             if response != 'y':
                 return
-            print(f"DuoKLI update available: {latest}")
+            print(f"  [bright_green]DuoKLI update available: {latest}[/]")
             url = release["zipball_url"]
             extract_dir = download_release(url)
             stage_update(extract_dir, latest)
             staged_path = UPDATE_DIR / latest.lstrip("v")
             if apply:
-                print(f"Applying update {latest} now...")
+                print(f"  [bright_blue]Applying update {latest} now...[/]")
                 try:
                     apply_update(staged_path, APP_DIR)
                 except Exception as e:
-                    print("Failed to apply update:", e)
+                    print(f"  [bright_red]Failed to apply update: {e}[/]")
                     sys.exit(1)
 
                 python = sys.executable
                 duo_script = APP_DIR / "DuoKLI.py"
                 if not duo_script.exists():
-                    print(f"Cannot restart: {duo_script} not found.")
+                    print(f"  [bright_red]Cannot restart: {duo_script} not found.[/]")
                     sys.exit(1)
 
-                print("Restarting DuoKLI...")
+                print("  [bright_blue]Restarting DuoKLI...[/]")
                 os.chdir(str(APP_DIR))
                 os.execv(python, [python, str(duo_script)])
             else:
-                print(f"Update staged at {staged_path}. It will be applied on next launch.")
+                print(f"  [bright_blue]Update staged at {staged_path}. It will be applied on next launch.[/]")
                 sys.exit(0)
         else:
-            print("DuoKLI is up to date.")
+            print("  [bright_blue]DuoKLI is up to date.[/]")
     except Exception as e:
-        print("Failed to check for updates:", e)
+        print(f"  [bright_red]Failed to check for updates: {e}[/]")

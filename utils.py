@@ -13,7 +13,9 @@ if not os.path.exists("config.json"):
         json.dump({
             "accounts": [],
             "delay": 900,
-            "debug": False
+            "debug": False,
+            "autoupdate": False,
+            "ask_autoupdate": True
         }, f, indent=4)
 
 with open("config.json", "r") as f:
@@ -37,7 +39,9 @@ def fint(n: int | float) -> str:
 def update_utils_config(new_config: dict):
     globals()['config'] = new_config
 
-def getch() -> str:
+def getch(s: str = "", show_input: bool = False) -> str:
+    if s:
+        print(s, end="")
     if os.name == "nt":
         ch = msvcrt.getch().decode("utf-8")
     else:
@@ -48,10 +52,12 @@ def getch() -> str:
             ch = sys.stdin.read(1)
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    if show_input:
+        _print(ch)
     return ch
 
 def inp(s: str, ss: list[str] = [], password: bool = False) -> str:
-    ss = ", ".join(["Esc to cancel", *ss])
+    ss = ", ".join(["Esc ─ cancel", *ss])
     _print("\033[?25h", end="")
     print(f"{s} [bright_black][{ss}][/]: ", end="")
     r = []
@@ -250,18 +256,20 @@ class Menu:
     def __init__(self, title):
         self.title = title
 
-    def print_and_getch(self, *lines: tuple[str, str, str] | str) -> str:
+    def print_and_getch(self, *lines: tuple[str, str, str] | str | None) -> str:
         keys = [x[1] for x in lines if type(x) is tuple]
 
         menu_list = []
         for l in lines:
+            if l is None:
+                continue
             if type(l) is tuple:
                 menu_list.append(f"  [{l[0]}]{l[1]}. {l[2]}[/]")
             else:
                 menu_list.append(l)
 
         menu_list = [self.title(), *menu_list]
-        opt_types = ["header", *[type(x) for x in lines]]
+        opt_types = ["header", *[type(x) for x in lines if x is not None]]
 
         clear()
         for s in menu_list:
