@@ -75,7 +75,7 @@ done
 BIN_PATH="${BIN_DIR}/duokli"
 
 if [[ ${UNINSTALL} -eq 1 ]]; then
-  read -rp "Are you sure you want to uninstall DuoKLI? This operation will also delete your config permanently! [y/N]: " CONFIRM
+  read -rp "Are you sure you want to uninstall DuoKLI? This operation will also delete your config permanently! [y/N]: " CONFIRM </dev/tty
   if [[ "${CONFIRM}" = "y" ]]; then
     info "Uninstalling"
     [[ -f "${BIN_PATH}" ]] && sudo rm -f "${BIN_PATH}" && note "Removed wrapper ${BIN_PATH}"
@@ -89,7 +89,7 @@ fi
 [[ -z "${GITHUB_REPO}" ]] && die "--github-repo owner/repo required"
 
 if [[ -d "${LOCATION}" ]]; then
-  read -rp "You have an existing installation of DuoKLI on your device, continuing will permanently delete it and install a fresh copy of DuoKLI. Would you like to continue? [y/N]: " CONFIRM
+  read -rp "You have an existing installation of DuoKLI on your device, continuing will permanently delete it and install a fresh copy of DuoKLI. Would you like to continue? [y/N]: " CONFIRM </dev/tty
   if [[ "${CONFIRM}" != "y" ]]; then
     exit 1
   fi
