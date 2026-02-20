@@ -4,7 +4,7 @@ A Duolingo XP/gem/streak/etc. farmer CLI Python script, based on
 [DuoXPy](https://github.com/DuoXPy/DuoXPy-Bot)'s open sourced code. Supports
 Windows and Linux.
 
-![Image of DuoKLI](/assets/duokli-image.png)
+![DuoKLI showcase](/assets/duokli-showcase.gif)
 
 ## Prerequisites
 
@@ -39,7 +39,8 @@ This method allows you to launch DuoKLI with this simple command:
 $ duokli
 ```
 
-Simply run the command below to install DuoKLI (it will install DuoKLI to `/usr/local/lib/duokli`).
+Simply run the command below to install DuoKLI (it will install DuoKLI to
+`/usr/local/lib/duokli`).
 
 ```
 curl -fsSL https://raw.githubusercontent.com/SeekPlush-linux/DuoKLI/refs/heads/main/Installation/install.sh | bash -s -- --github-repo SeekPlush-linux/DuoKLI
