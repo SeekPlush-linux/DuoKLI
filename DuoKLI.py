@@ -1,6 +1,6 @@
 import requests, pytz, sys, os, json, traceback, time, concurrent.futures, threading
 _print = print
-from rich import print
+from rich.console import Console
 from datetime import datetime, timedelta
 from tzlocal import get_localzone
 from utils import (getch, fint, inp, current_time, time_taken, get_headers, get_duo_info,
@@ -19,6 +19,9 @@ import version, updater
 # TODO: Add mouse support
 # TODO: Create a simple logging class to decrease clutter in the code by debug prints and such
 # TODO: Fix crash on any arrow key press in a menu (Windows-only bug)
+
+con = Console(highlight=False)
+print = con.print
 
 VERSION = version.__version__
 TIMEZONE = str(get_localzone())

@@ -1,12 +1,15 @@
 import requests, random, sys, os, json, re, base64, uuid
 _print = print
-from rich import print
+from rich.console import Console
 from rich.progress import Progress, TextColumn, TimeRemainingColumn, TimeElapsedColumn
 from datetime import datetime
 if os.name == "nt":
     import msvcrt
 else:
     import tty, termios
+
+con = Console(highlight=False)
+print = con.print
 
 if not os.path.exists("config.json"):
     with open("config.json", "w") as f:

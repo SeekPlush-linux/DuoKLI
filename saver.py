@@ -1,9 +1,12 @@
 import json, pytz, sys, traceback, time, requests, random
 _print = print
-from rich import print
+from rich.console import Console
 from tzlocal import get_localzone
 from datetime import datetime, timezone
 from utils import get_duo_info, get_headers, clear, current_time
+
+con = Console(highlight=False)
+print = con.print
 
 VERSION = "v0.1.2 Beta"
 TIMEZONE = str(get_localzone())

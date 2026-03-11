@@ -2,9 +2,12 @@ import sys, os, requests, zipfile, tempfile, shutil
 import re
 import json
 from pathlib import Path
-from rich import print as richprint
+from rich.console import Console
 from utils import getch
 import version
+
+con = Console(highlight=False)
+richprint = con.print
 
 APP_DIR = Path.cwd()
 UPDATE_DIR = version.UPDATE_DIR
